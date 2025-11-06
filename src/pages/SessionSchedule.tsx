@@ -1,0 +1,535 @@
+import { useMemo, useState, useRef, useEffect } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { ConferenceLayout } from "@/components/layout/ConferenceLayout";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Plus, X } from "lucide-react";
+
+type CalendarItem = {
+  id: string;
+  title: string;
+  description?: string;
+  start: string; // ISO date string
+  end: string; // ISO date string
+  speaker?: { name: string; avatarUrl?: string };
+  room: string;
+  files?: { name: string; url?: string }[];
+}; 
+  
+const HOUR_HEIGHT = 64; // px per hour
+
+const COLORS = ["#60a5fa", "#22d3ee", "#34d399", "#fbbf24", "#f472b6", "#a78bfa", "#38bdf8", "#f97316", "#ef4444", "#0ea5e9"];
+
+const getColorForKey = (key: string) => {
+  const hash = Array.from(key).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  return COLORS[hash % COLORS.length];
+};
+
+const startOfWeek = (d: Date) => {
+  const date = new Date(d);
+  const day = (date.getDay() + 6) % 7; // Monday=0
+  date.setDate(date.getDate() - day);
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+const addDays = (d: Date, days: number) => {
+  const out = new Date(d);
+  out.setDate(out.getDate() + days);
+  return out;
+};
+
+const formatDateLabel = (d: Date) => {
+  const weekdays = ["CN", "T2", "T3", "T4", "T5", "T6", "T7"];
+  const dayOfWeek = weekdays[d.getDay()];
+  const dateStr = d.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit", year: "2-digit" });
+  return { dayOfWeek, dateStr };
+};
+
+const minutesSinceMidnight = (d: Date) => d.getHours() * 60 + d.getMinutes();
+
+const getInitials = (name?: string) => {
+  if (!name) return "?";
+  const p = name.trim().split(/\s+/);
+  return ((p[0]?.[0] || "") + (p[p.length - 1]?.[0] || "")).toUpperCase();
+};
+
+const SessionSchedule = () => {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const today = new Date();
+  const weekStart = startOfWeek(today);
+
+  // Demo rooms and items (replace with API in real app)
+  const [rooms, setRooms] = useState<string[]>(["Phòng A1", "Phòng A2", "Phòng B1"]);
+  const [selectedRoom, setSelectedRoom] = useState<string>(rooms[0]);
+  const [newRoom, setNewRoom] = useState("");
+
+  // Dialog state
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    title: "",
+    description: "",
+    startDate: "",
+    startTime: "",
+    endDate: "",
+    endTime: "",
+    speaker: "",
+    files: [] as { name: string; url?: string }[],
+  });
+
+  // Demo speakers (replace with API in real app)
+  const speakers = [
+    { id: "1", name: "Nguyễn Văn A", avatarUrl: "" },
+    { id: "2", name: "Trần Thị B", avatarUrl: "" },
+    { id: "3", name: "Lê Văn C", avatarUrl: "" },
+  ];
+
+  // Scroll sync refs
+  const timeScrollRef = useRef<HTMLDivElement>(null);
+  const daysScrollRef = useRef<HTMLDivElement>(null);
+
+  const [items, setItems] = useState<CalendarItem[]>([
+    {
+      id: "1",
+      title: "Xu hướng AI trong 5 năm tới",
+      start: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 3, 9, 0).toISOString(),
+      end: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 3, 10, 0).toISOString(),
+      speaker: { name: "Nguyễn Văn A" },
+      room: "Phòng A1",
+    },
+    {
+      id: "2",
+      title: "Điện toán đám mây & Hạ tầng bền vững",
+      start: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 4, 13, 0).toISOString(),
+      end: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 4, 15, 0).toISOString(),
+      speaker: { name: "Trần Thị B" },
+      room: "Phòng A1",
+    },
+    {
+      id: "3",
+      title: "Bảo mật hệ thống trong kỷ nguyên AI",
+      start: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 5, 10, 0).toISOString(),
+      end: new Date(today.getFullYear(), today.getMonth(), today.getDate() + 5, 12, 0).toISOString(),
+      speaker: { name: "Lê Văn C" },
+      room: "Phòng B1",
+    },
+  ]);
+
+  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+
+  const itemsByDay = useMemo(() => {
+    const filtered = items.filter((it) => it.room === selectedRoom);
+    return weekDays.map((day) => {
+      const dayItems = filtered.filter((it) => {
+        const d = new Date(it.start);
+        return d.getFullYear() === day.getFullYear() && d.getMonth() === day.getMonth() && d.getDate() === day.getDate();
+      });
+      return dayItems;
+    });
+  }, [items, selectedRoom, weekDays]);
+
+  // Sync scroll between time column and days grid
+  useEffect(() => {
+    let cleanup: (() => void) | undefined;
+    
+    // Use setTimeout to ensure DOM elements are rendered
+    const timer = setTimeout(() => {
+      const timeScroll = timeScrollRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+      const daysScroll = daysScrollRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+      
+      if (!timeScroll || !daysScroll) return;
+
+      let isSyncing = false;
+
+      const handleTimeScroll = () => {
+        if (isSyncing) return;
+        isSyncing = true;
+        if (daysScroll.scrollTop !== timeScroll.scrollTop) {
+          daysScroll.scrollTop = timeScroll.scrollTop;
+        }
+        requestAnimationFrame(() => {
+          isSyncing = false;
+        });
+      };
+
+      const handleDaysScroll = () => {
+        if (isSyncing) return;
+        isSyncing = true;
+        if (timeScroll.scrollTop !== daysScroll.scrollTop) {
+          timeScroll.scrollTop = daysScroll.scrollTop;
+        }
+        requestAnimationFrame(() => {
+          isSyncing = false;
+        });
+      };
+
+      timeScroll.addEventListener('scroll', handleTimeScroll);
+      daysScroll.addEventListener('scroll', handleDaysScroll);
+
+      // Store cleanup function
+      cleanup = () => {
+        timeScroll.removeEventListener('scroll', handleTimeScroll);
+        daysScroll.removeEventListener('scroll', handleDaysScroll);
+      };
+    }, 100);
+
+    return () => {
+      clearTimeout(timer);
+      cleanup?.();
+    };
+  }, []);
+
+  const handleAddRoom = () => {
+    const v = newRoom.trim();
+    if (!v) return;
+    if (!rooms.includes(v)) setRooms((r) => [...r, v]);
+    setSelectedRoom(v);
+    setNewRoom("");
+  };
+
+  const handleOpenDialog = () => {
+    // Initialize form with current date/time
+    const now = new Date();
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    
+    setFormData({
+      title: "",
+      description: "",
+      startDate: now.toISOString().split('T')[0],
+      startTime: "09:00",
+      endDate: tomorrow.toISOString().split('T')[0],
+      endTime: "17:00",
+      speaker: "",
+      files: [],
+    });
+    setIsDialogOpen(true);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    
+    const newFiles = Array.from(files).map(file => ({
+      name: file.name,
+      url: undefined, // In real app, upload and get URL
+    }));
+    
+    setFormData(prev => ({
+      ...prev,
+      files: [...prev.files, ...newFiles],
+    }));
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      files: prev.files.filter((_, i) => i !== index),
+    }));
+  };
+
+  const handleSaveSchedule = () => {
+    if (!formData.title || !formData.startDate || !formData.startTime || !formData.endDate || !formData.endTime) {
+      return; // Add validation error handling
+    }
+
+    const startDateTime = new Date(`${formData.startDate}T${formData.startTime}`);
+    const endDateTime = new Date(`${formData.endDate}T${formData.endTime}`);
+    
+    const selectedSpeaker = speakers.find(s => s.id === formData.speaker);
+    
+    const newItem: CalendarItem = {
+      id: Date.now().toString(),
+      title: formData.title,
+      description: formData.description,
+      start: startDateTime.toISOString(),
+      end: endDateTime.toISOString(),
+      speaker: selectedSpeaker ? { name: selectedSpeaker.name, avatarUrl: selectedSpeaker.avatarUrl } : undefined,
+      room: selectedRoom,
+      files: formData.files.length > 0 ? formData.files : undefined,
+    };
+
+    setItems(prev => [...prev, newItem]);
+    setIsDialogOpen(false);
+  };
+
+  const canAddItem = !!selectedRoom;
+
+  const headerDateStr = today.toLocaleDateString("vi-VN", { day: "2-digit", month: "long", year: "numeric" });
+
+  return (
+    <ConferenceLayout sidebarTitle="Hội nghị Công nghệ Số Việt Nam 2025">
+      <div className="px-6 py-6">
+        <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="text-lg font-medium">Hôm nay | {headerDateStr}</div>
+          <div className="flex items-center gap-2">
+            <Select value={selectedRoom} onValueChange={setSelectedRoom}>
+              <SelectTrigger className="w-40">
+                <SelectValue placeholder="Chọn phòng" />
+              </SelectTrigger>
+              <SelectContent>
+                {rooms.map((r) => (
+                  <SelectItem key={r} value={r}>
+                    {r}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Input value={newRoom} onChange={(e) => setNewRoom(e.target.value)} placeholder="Thêm phòng..." className="w-40" />
+            <Button variant="secondary" onClick={handleAddRoom}>
+              Thêm mới
+            </Button>
+            <Button disabled={!canAddItem} onClick={handleOpenDialog}>
+              Thêm lịch
+            </Button>
+          </div>
+        </div>
+
+        {/* Calendar area - fits screen height with internal scroll for hours */}
+        <div className="rounded-2xl border bg-white">
+          <div className="grid grid-cols-[64px,1fr]">
+            {/* Time column header spacer + days header */}
+            <div />
+            <div className="grid grid-cols-7 border-b">
+              {weekDays.map((d, i) => {
+                const { dayOfWeek, dateStr } = formatDateLabel(d);
+                return (
+                  <div key={i} className="px-4 py-3">
+                    <div className="text-sm font-medium">{dayOfWeek}</div>
+                    <div className="text-xs text-muted-foreground">{dateStr}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-[64px,1fr]" style={{ height: "calc(100vh - 240px)" }}>
+            {/* Time column */}
+            <ScrollArea ref={timeScrollRef} className="h-full border-r">
+              <div style={{ height: HOUR_HEIGHT * 24 }} className="relative">
+                {Array.from({ length: 24 }, (_, h) => (
+                  <div key={h} className="absolute left-0 right-0" style={{ top: h * HOUR_HEIGHT }}>
+                    <div className="h-px bg-border" />
+                    <div className="text-xs text-muted-foreground mt-[-10px] pl-2">{`${String(h).padStart(2, "0")}:00`}</div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+
+            {/* Days grid */}
+            <ScrollArea ref={daysScrollRef} className="h-full">
+              <div className="grid grid-cols-7 relative" style={{ height: HOUR_HEIGHT * 24 }}>
+                {weekDays.map((day, dayIdx) => (
+                  <div key={dayIdx} className="relative border-l">
+                    {/* hour lines */}
+                    {Array.from({ length: 24 }, (_, h) => (
+                      <div key={h} className="absolute left-0 right-0 h-px bg-border/50" style={{ top: h * HOUR_HEIGHT }} />
+                    ))}
+
+                    {/* events */}
+                    <div className="relative h-full px-2">
+                      {itemsByDay[dayIdx].map((it) => {
+                        const s = new Date(it.start);
+                        const e = new Date(it.end);
+                        const top = (minutesSinceMidnight(s) / 60) * HOUR_HEIGHT;
+                        const height = ((e.getTime() - s.getTime()) / (1000 * 60 * 60)) * HOUR_HEIGHT;
+                        const color = getColorForKey(it.id + it.title + it.room);
+                        return (
+                          <div
+                            key={it.id}
+                            className="absolute left-2 right-2 rounded-xl shadow-sm text-white"
+                            style={{ top, height, backgroundColor: color }}
+                          >
+                            <div className="p-3 space-y-2 text-sm">
+                              <div className="font-medium leading-tight line-clamp-2">{it.title}</div>
+                              <div className="flex items-center gap-2 text-xs opacity-90">
+                                <Avatar className="h-6 w-6 ring-2 ring-white/50">
+                                  {it.speaker?.avatarUrl ? (
+                                    <AvatarImage src={it.speaker.avatarUrl} alt={it.speaker.name} />
+                                  ) : (
+                                    <AvatarFallback className="bg-black/20 text-white">{getInitials(it.speaker?.name)}</AvatarFallback>
+                                  )}
+                                </Avatar>
+                                <span>
+                                  {s.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} -
+                                  {" "}
+                                  {e.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
+        </div>
+      </div>
+
+      {/* Add Schedule Dialog */}
+      <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Thêm phiên hội nghị</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            {/* Title */}
+            <div className="space-y-2">
+              <Label htmlFor="title">
+                Tiêu đề phiên hội nghị <span className="text-red-500">*</span>
+              </Label>
+              <Input
+                id="title"
+                value={formData.title}
+                onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="Nhập tiêu đề phiên hội nghị"
+              />
+            </div>
+
+            {/* Description */}
+            <div className="space-y-2">
+              <Label htmlFor="description">Mô tả phiên hội nghị</Label>
+              <Textarea
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                placeholder="Nhập mô tả phiên hội nghị"
+                rows={4}
+              />
+            </div>
+
+            {/* Time */}
+            <div className="space-y-2">
+              <Label>
+                Thời gian <span className="text-red-500">*</span>
+              </Label>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="startTime" className="text-xs text-muted-foreground">Từ</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="startTime"
+                      type="time"
+                      value={formData.startTime}
+                      onChange={(e) => setFormData(prev => ({ ...prev, startTime: e.target.value }))}
+                      className="flex-1"
+                    />
+                    <Input
+                      id="startDate"
+                      type="date"
+                      value={formData.startDate}
+                      onChange={(e) => setFormData(prev => ({ ...prev, startDate: e.target.value }))}
+                      className="flex-1"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="endTime" className="text-xs text-muted-foreground">Đến</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="endTime"
+                      type="time"
+                      value={formData.endTime}
+                      onChange={(e) => setFormData(prev => ({ ...prev, endTime: e.target.value }))}
+                      className="flex-1"
+                    />
+                    <Input
+                      id="endDate"
+                      type="date"
+                      value={formData.endDate}
+                      onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
+                      className="flex-1"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Speaker */}
+            <div className="space-y-2">
+              <Label htmlFor="speaker">Diễn giả trong phiên hội nghị</Label>
+              <Select value={formData.speaker} onValueChange={(value) => setFormData(prev => ({ ...prev, speaker: value }))}>
+                <SelectTrigger id="speaker">
+                  <SelectValue placeholder="Chọn diễn giả" />
+                </SelectTrigger>
+                <SelectContent>
+                  {speakers.map((speaker) => (
+                    <SelectItem key={speaker.id} value={speaker.id}>
+                      {speaker.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Files */}
+            <div className="space-y-2">
+              <Label>Tài liệu cho phiên hội nghị</Label>
+              <div className="flex flex-wrap gap-2 mb-2">
+                {formData.files.map((file, index) => (
+                  <div
+                    key={index}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-muted rounded-md text-sm"
+                  >
+                    <span>{file.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveFile(index)}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-2">
+                <input
+                  type="file"
+                  id="fileUpload"
+                  onChange={handleFileUpload}
+                  multiple
+                  className="hidden"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => document.getElementById('fileUpload')?.click()}
+                >
+                  <Plus className="h-4 w-4 mr-2" />
+                  Thêm tài liệu
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="destructive" onClick={() => setIsDialogOpen(false)}>
+              Hủy
+            </Button>
+            <Button onClick={handleSaveSchedule}>
+              Lưu thông tin
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      </div>
+    </ConferenceLayout>
+  );
+};
+
+export default SessionSchedule;
+
+

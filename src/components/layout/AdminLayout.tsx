@@ -1,0 +1,51 @@
+import { ReactNode } from "react";
+import { AdminSidebar } from "./AdminSidebar";
+import { Bell } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+
+interface AdminLayoutProps {
+  children: ReactNode;
+}
+
+export const AdminLayout = ({ children }: AdminLayoutProps) => {
+  return (
+    <div className="flex min-h-screen bg-background">
+      <AdminSidebar />
+      
+      <div className="flex-1 flex flex-col">
+        {/* Top Bar */}
+        <header className="bg-card border-b px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex-1 max-w-md">
+              <Input
+                type="search"
+                placeholder="Thông báo"
+                className="bg-background"
+              />
+            </div>
+            
+            <div className="flex items-center gap-4">
+              <button className="relative">
+                <Bell className="w-5 h-5" />
+                <span className="absolute -top-1 -right-1 w-2 h-2 bg-destructive rounded-full" />
+              </button>
+              
+              <div className="flex items-center gap-2">
+                <Avatar className="w-8 h-8">
+                  <AvatarFallback>NY</AvatarFallback>
+                </Avatar>
+                <span className="text-sm font-medium">Nguyễn Yến B</span>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Main Content */}
+        <main className="flex-1 p-6">
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+};

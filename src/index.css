@@ -1,0 +1,161 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 240 6% 93%;
+    --foreground: 240 10% 12%;
+
+    --card: 240 20% 98%;
+    --card-foreground: 240 10% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 10% 12%;
+
+    --primary: 220 16% 16%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 40 16% 96%;
+    --secondary-foreground: 240 10% 12%;
+
+    --muted: 240 5% 96%;
+    --muted-foreground: 0 0% 67%;
+
+    --accent: 0 0% 67%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 220 16% 16%;
+    --icon-color: 266 90% 59%;
+    --radius: 0.75rem;
+    
+    /* Custom tokens */
+    --gradient-primary: linear-gradient(135deg, hsl(262 83% 58%), hsl(280 70% 50%));
+    --gradient-accent: linear-gradient(135deg, hsl(262 83% 58%), hsl(190 90% 50%));
+    --shadow-sm: 0 1px 2px 0 hsl(240 10% 12% / 0.05);
+    --shadow-md: 0 4px 6px -1px hsl(240 10% 12% / 0.1);
+    --shadow-lg: 0 10px 15px -3px hsl(240 10% 12% / 0.1);
+    --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+
+    --sidebar-background: 0 0% 98%;
+
+    --sidebar-foreground: 240 5.3% 26.1%;
+
+    --sidebar-primary: 240 5.9% 10%;
+
+    --sidebar-primary-foreground: 0 0% 98%;
+
+    --sidebar-accent: 240 4.8% 95.9%;
+
+    --sidebar-accent-foreground: 240 5.9% 10%;
+
+    --sidebar-border: 220 13% 91%;
+
+    --sidebar-ring: 217.2 91.2% 59.8%;
+
+    --primary-color: hsl(var(--primary));
+    --scrollbar-size: 12px;
+
+  }
+
+  .dark {
+    --background: 240 10% 8%;
+    --foreground: 0 0% 98%;
+
+    --card: 240 10% 12%;
+    --card-foreground: 0 0% 98%;
+
+    --popover: 240 10% 12%;
+    --popover-foreground: 0 0% 98%;
+
+    --primary: 262 83% 58%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 240 10% 18%;
+    --secondary-foreground: 0 0% 98%;
+
+    --muted: 240 10% 18%;
+    --muted-foreground: 240 5% 65%;
+
+    --accent: 262 83% 58%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 240 10% 18%;
+    --input: 240 10% 18%;
+    --ring: 262 83% 58%;
+    --icon-color: 266 90% 59%;
+
+  }
+
+  * {
+    scrollbar-color: var(--primary-color) transparent; /* thumb, track */
+    scrollbar-width: initial
+  }
+
+  /* WebKit-based browsers (Chrome, Edge, Safari) */
+  *::-webkit-scrollbar {
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
+    background: transparent; /* whole scrollbar background */
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent; /* track */
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: var(--primary-color); /* thumb */
+    border-radius: 9999px;
+    border: 3px solid transparent; /* creates padding between thumb and track */
+    background-clip: padding-box;
+  }
+
+  /* Optional: hover state for thumb */
+  *::-webkit-scrollbar-thumb:hover {
+    filter: brightness(0.95);
+  }
+
+
+    /* Fix date input icon alignment */
+  input[type="date"] {
+    position: relative;
+    padding-right: 2.5rem; /* space for the icon */
+  }
+
+  input[type="date"]::-webkit-calendar-picker-indicator {
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    cursor: pointer;
+    opacity: 0.6;
+  }
+
+  input[type="date"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+  }
+
+
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
