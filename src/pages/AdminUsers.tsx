@@ -3,80 +3,77 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Search, Eye, Edit, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useApi } from "@/hooks/use-api";
+import AdminUserForm from "@/components/admin/AdminUserForm";
 
-interface User {
-  id: string;
-  fullName: string;
+interface UserRow {
+  _id: string;
+  name: string;
   email: string;
-  phone: string;
-  role: "admin" | "user" | "organizer";
+  phone?: string;
+  avatar?: string;
+  is_active?: boolean;
+  role: 'admin' | 'organizer' | 'user';
 }
 
 const AdminUsers = () => {
-  const [users, setUsers] = useState<User[]>([
-    {
-      id: "1",
-      fullName: "getsg",
-      email: "funlesthwa@ptit.edu.vn",
-      phone: "0384 132 687",
-      role: "admin",
-    },
-    {
-      id: "2",
-      fullName: "Nguyễn Văn A",
-      email: "nguyenvana@example.com",
-      phone: "0912 345 678",
-      role: "user",
-    },
-    {
-      id: "3",
-      fullName: "Trần Thị B",
-      email: "tranthib@example.com",
-      phone: "0923 456 789",
-      role: "organizer",
-    },
-    {
-      id: "4",
-      fullName: "Lê Văn C",
-      email: "levanc@example.com",
-      phone: "0934 567 890",
-      role: "user",
-    },
-    {
-      id: "5",
-      fullName: "Phạm Thị D",
-      email: "phamthid@example.com",
-      phone: "0945 678 901",
-      role: "organizer",
-    },
-  ]);
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const { safeRequest, api } = useApi();
+  const [openCreate, setOpenCreate] = useState(false)
+  const [editing, setEditing] = useState<UserRow | null>(null)
 
-  const getRoleBadge = (role: User["role"]) => {
+  const reload = async () => {
+    await safeRequest(async () => {
+      // fetch admins and organizers, normalize into single list
+      const [adminsRes, orgRes] = await Promise.all([api.get('/admin/users'), api.get('/admin/organizers')]);
+
+      const adminsPayload = (adminsRes as any)?.data ?? adminsRes;
+      const orgPayload = (orgRes as any)?.data ?? orgRes;
+
+      const admins: UserRow[] = (adminsPayload?.admins || []).map((a: any) => ({
+        _id: a._id || a.id,
+        name: a.name || a.fullName || a.email,
+        email: a.email,
+        phone: a.phone,
+        is_active: typeof a.is_active !== 'undefined' ? a.is_active : true,
+        role: 'admin',
+      }));
+
+      const orgs: UserRow[] = (orgPayload?.organizers || []).map((o: any) => ({
+        _id: o._id,
+        name: o.name,
+        email: o.email,
+        phone: o.phone,
+        is_active: typeof o.is_active !== 'undefined' ? o.is_active : true,
+        role: 'organizer',
+      }));
+
+      setUsers([...admins, ...orgs]);
+    })
+  }
+
+  useEffect(() => { void reload() }, [safeRequest, api])
+
+  const getRoleBadge = (role: UserRow['role'], isActive?: boolean) => {
+    if (!isActive) return <Badge className="bg-gray-100 text-gray-600">Vô hiệu</Badge>;
     switch (role) {
-      case "admin":
-        return (
-          <Badge className="bg-primary text-primary-foreground hover:bg-primary">
-            Admin
-          </Badge>
-        );
-      case "organizer":
-        return (
-          <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100">
-            Tổ chức
-          </Badge>
-        );
-      case "user":
-        return (
-          <Badge className="bg-gray-100 text-gray-700 hover:bg-gray-100">
-            Người dùng
-          </Badge>
-        );
+      case 'admin':
+        return <Badge className="bg-primary text-primary-foreground">Admin</Badge>;
+      case 'organizer':
+        return <Badge className="bg-blue-100 text-blue-700">Tổ chức</Badge>;
+      case 'user':
+      default:
+        return <Badge className="bg-gray-100 text-gray-700">Người dùng</Badge>;
     }
   };
 
-  const deleteUser = (id: string) => {
-    setUsers(users.filter((user) => user.id !== id));
+  const disableUser = async (id: string, disabled = true) => {
+    await safeRequest(async () => {
+      await api.patch(`/admin/organizers/${id}/disable`, { disabled });
+      // update local state
+      setUsers((prev) => prev.map((u) => (u._id === id ? { ...u, is_active: !disabled } : u)));
+    });
   };
 
   return (
@@ -99,7 +96,7 @@ const AdminUsers = () => {
               <option>Người dùng</option>
             </select>
           </div>
-          <Button className="bg-primary hover:bg-primary/90">TẠO MỚI</Button>
+          <Button className="bg-primary hover:bg-primary/90" onClick={() => setOpenCreate(true)}>TẠO MỚI</Button>
         </div>
 
         {/* Table */}
@@ -128,19 +125,15 @@ const AdminUsers = () => {
               <tbody>
                 {users.map((user, index) => (
                   <tr
-                    key={user.id}
+                    key={user._id}
                     className={`border-b hover:bg-muted/50 ${
-                      index % 2 === 0 ? "bg-background" : "bg-muted/20"
+                      index % 2 === 0 ? 'bg-background' : 'bg-muted/20'
                     }`}
                   >
-                    <td className="px-6 py-4 text-sm font-medium">
-                      {user.fullName}
-                    </td>
-                    <td className="px-6 py-4 text-sm text-muted-foreground">
-                      {user.email}
-                    </td>
+                    <td className="px-6 py-4 text-sm font-medium">{user.name}</td>
+                    <td className="px-6 py-4 text-sm text-muted-foreground">{user.email}</td>
                     <td className="px-6 py-4 text-sm">{user.phone}</td>
-                    <td className="px-6 py-4">{getRoleBadge(user.role)}</td>
+                    <td className="px-6 py-4">{getRoleBadge(user.role, user.is_active)}</td>
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-2">
                         <Button
@@ -154,17 +147,20 @@ const AdminUsers = () => {
                           variant="ghost"
                           size="icon"
                           className="text-muted-foreground hover:text-foreground"
+                          onClick={() => setEditing(user)}
                         >
                           <Edit className="w-4 h-4" />
                         </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => deleteUser(user.id)}
-                          className="text-muted-foreground hover:text-destructive"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
+                        {user.role === 'organizer' ? (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => void disableUser(user._id, !!user.is_active)}
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -190,6 +186,20 @@ const AdminUsers = () => {
           </div>
         </div>
       </div>
+      <AdminUserForm
+        open={openCreate}
+        onOpenChange={(v) => { setOpenCreate(v); if (!v) void reload() }}
+        role={'organizer'}
+        onSaved={() => void reload()}
+      />
+
+      <AdminUserForm
+        open={!!editing}
+        onOpenChange={(v) => { if (!v) setEditing(null) }}
+        initial={editing}
+        role={editing?.role === 'admin' ? 'admin' : 'organizer'}
+        onSaved={() => { setEditing(null); void reload() }}
+      />
     </AdminLayout>
   );
 };
