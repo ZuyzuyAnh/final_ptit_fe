@@ -220,40 +220,124 @@ const EditConference = () => {
     if (!speakerForm.full_name.trim() || !speakerForm.email.trim()) {
       return;
     }
+    (async () => {
+      // If we're editing an existing event (id is present), persist speaker immediately
+      if (id) {
+        try {
+          // If editing an existing speaker
+          if (editingSpeakerId && !editingSpeakerId.toString().startsWith('temp-')) {
+            const form = new FormData();
+            form.append('full_name', speakerForm.full_name);
+            form.append('bio', speakerForm.bio || '');
+            form.append('email', speakerForm.email);
+            form.append('phone', speakerForm.phone || '');
+            form.append('title', speakerForm.professional_title || '');
+            form.append('linkedin_url', speakerForm.linkedin_url || '');
+            // If avatar file provided, append as photo_url
+            if (speakerForm.avatar) {
+              form.append('photo_url', speakerForm.avatar);
+            }
 
-    if (editingSpeakerId) {
-      setSpeakers(
-        speakers.map((speaker) =>
-          speaker.id.toString() === editingSpeakerId
-            ? {
-                ...speaker,
-                full_name: speakerForm.full_name,
-                bio: speakerForm.bio,
-                email: speakerForm.email,
-                phone: speakerForm.phone,
-                professional_title: speakerForm.professional_title,
-                linkedin_url: speakerForm.linkedin_url,
-                avatar: speakerForm.avatar,
-                avatarPreview: speakerForm.avatarPreview,
+            // Use PATCH properties endpoint to update only provided fields
+            await safeRequest(() => api.patch(`/organizer/speakers/${editingSpeakerId}/properties`, form, { sendJson: false }));
+
+            // Refresh local speaker list from server
+            const resp = await safeRequest(() => api.get(`/organizer/events/${id}`));
+            const event = (resp as any)?.data ?? resp ?? null;
+            if (event && event.speakers) {
+              const speakersData: Speaker[] = event.speakers.map((speaker: any) => ({
+                id: speaker.id,
+                full_name: speaker.full_name || '',
+                bio: speaker.bio || '',
+                email: speaker.email || '',
+                phone: speaker.phone || '',
+                professional_title: speaker.professional_title || '',
+                linkedin_url: speaker.linkedin_url || '',
+                photo_url: speaker.photo_url,
+                avatar: null,
+                avatarPreview: speaker.photo_url || null,
+              }));
+              setSpeakers(speakersData);
+            }
+          } else {
+            // Creating a new speaker for this event
+            const form = new FormData();
+            form.append('event_id', id as string);
+            form.append('full_name', speakerForm.full_name);
+            form.append('bio', speakerForm.bio || '');
+            form.append('email', speakerForm.email);
+            form.append('phone', speakerForm.phone || '');
+            form.append('organization', '');
+            form.append('title', speakerForm.professional_title || '');
+            form.append('linkedin_url', speakerForm.linkedin_url || '');
+            if (speakerForm.avatar) {
+              form.append('photo_url', speakerForm.avatar);
+            }
+
+            const created = await safeRequest(() => api.post('/organizer/speakers', form, { sendJson: false }));
+            if (created) {
+              // Re-fetch event speakers to get consistent list
+              const resp = await safeRequest(() => api.get(`/organizer/events/${id}`));
+              const event = (resp as any)?.data ?? resp ?? null;
+              if (event && event.speakers) {
+                const speakersData: Speaker[] = event.speakers.map((speaker: any) => ({
+                  id: speaker.id,
+                  full_name: speaker.full_name || '',
+                  bio: speaker.bio || '',
+                  email: speaker.email || '',
+                  phone: speaker.phone || '',
+                  professional_title: speaker.professional_title || '',
+                  linkedin_url: speaker.linkedin_url || '',
+                  photo_url: speaker.photo_url,
+                  avatar: null,
+                  avatarPreview: speaker.photo_url || null,
+                }));
+                setSpeakers(speakersData);
               }
-            : speaker
-        )
-      );
-    } else {
-      const newSpeaker: Speaker = {
-        id: Date.now().toString(),
-        full_name: speakerForm.full_name,
-        bio: speakerForm.bio,
-        email: speakerForm.email,
-        phone: speakerForm.phone,
-        professional_title: speakerForm.professional_title,
-        linkedin_url: speakerForm.linkedin_url,
-        avatar: speakerForm.avatar,
-        avatarPreview: speakerForm.avatarPreview,
-      };
-      setSpeakers([...speakers, newSpeaker]);
-    }
-    handleCloseSpeakerModal();
+            }
+          }
+        } catch (err) {
+          console.error('Failed to save speaker to server:', err);
+        } finally {
+          handleCloseSpeakerModal();
+        }
+      } else {
+        // No event id (creating a new event): keep local until event is created
+        if (editingSpeakerId) {
+          setSpeakers(
+            speakers.map((speaker) =>
+              speaker.id.toString() === editingSpeakerId
+                ? {
+                    ...speaker,
+                    full_name: speakerForm.full_name,
+                    bio: speakerForm.bio,
+                    email: speakerForm.email,
+                    phone: speakerForm.phone,
+                    professional_title: speakerForm.professional_title,
+                    linkedin_url: speakerForm.linkedin_url,
+                    avatar: speakerForm.avatar,
+                    avatarPreview: speakerForm.avatarPreview,
+                  }
+                : speaker
+            )
+          );
+        } else {
+          const newSpeaker: Speaker = {
+            id: `temp-${Date.now().toString()}`,
+            full_name: speakerForm.full_name,
+            bio: speakerForm.bio,
+            email: speakerForm.email,
+            phone: speakerForm.phone,
+            professional_title: speakerForm.professional_title,
+            linkedin_url: speakerForm.linkedin_url,
+            avatar: speakerForm.avatar,
+            avatarPreview: speakerForm.avatarPreview,
+          };
+          setSpeakers([...speakers, newSpeaker]);
+        }
+        handleCloseSpeakerModal();
+      }
+    })();
   };
 
   const handleDeleteSpeaker = () => {

@@ -9,7 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, X } from "lucide-react";
+import { Plus, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { useApi } from "@/hooks/use-api";
 
 type CalendarItem = {
@@ -65,7 +65,8 @@ const SessionSchedule = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const today = new Date();
-  const weekStart = startOfWeek(today);
+    // weekStart is stateful so we can navigate between weeks
+    const [weekStart, setWeekStart] = useState<Date>(startOfWeek(today));
 
   // rooms / places loaded from API
   const { api, safeRequest } = useApi();
@@ -86,12 +87,7 @@ const SessionSchedule = () => {
     files: [] as { name: string; url?: string }[],
   });
 
-  // Demo speakers (replace with API in real app)
-  const speakers = [
-    { id: "1", name: "Nguyễn Văn A", avatarUrl: "" },
-    { id: "2", name: "Trần Thị B", avatarUrl: "" },
-    { id: "3", name: "Lê Văn C", avatarUrl: "" },
-  ];
+  const [speakers, setSpeakers] = useState<{ id: number; full_name: string; photo_url?: string }[]>([])
 
   const [event, setEvent] = useState<any | null>(null);
   const [isEditable, setIsEditable] = useState(true);
@@ -177,6 +173,18 @@ const SessionSchedule = () => {
         setEvent(evData);
         const ended = evData.end_time ? new Date(evData.end_time) < new Date() : false;
         setIsEditable(!ended);
+        // Set default weekStart based on event timeframe
+        try {
+          const now = new Date();
+          const evStart = evData.start_time ? new Date(evData.start_time) : null;
+          if (evStart && now < evStart) {
+            setWeekStart(startOfWeek(evStart));
+          } else {
+            setWeekStart(startOfWeek(now));
+          }
+        } catch (err) {
+          // ignore
+        }
       }
 
       // sessions for event
@@ -190,7 +198,7 @@ const SessionSchedule = () => {
             description: it.description,
             start: it.start_time,
             end: it.end_time,
-            speaker: it.speakers && it.speakers[0] ? { name: it.speakers[0].full_name, avatarUrl: it.speakers[0].photo_url } : undefined,
+            speaker: it.speakers && it.speakers.length > 0 ? { name: it.speakers[0].full_name || it.speakers[0].full_name, avatarUrl: it.speakers[0].photo_url || it.speakers[0].photo_url } : undefined,
             room: it.place,
             files: [],
           }))
@@ -204,10 +212,19 @@ const SessionSchedule = () => {
         setPlaces(pData.map((pl: any) => ({ id: pl.id || pl._id || pl.id, name: pl.name })));
         if (pData.length > 0) setSelectedRoom(pData[0].name)
       }
+      // speakers for event
+      const sp = await safeRequest(() => api.get(`/organizer/speakers/event/${id}`))
+      const spData = (sp as any)?.data ?? sp ?? null
+      if (spData && Array.isArray(spData.data)) {
+        setSpeakers(spData.data.map((s: any) => ({ id: s.id, full_name: s.full_name, photo_url: s.photo_url })))
+      }
     }
 
     load()
   }, [id, api, safeRequest])
+
+  const goPrevWeek = () => setWeekStart((ws) => addDays(ws, -7));
+  const goNextWeek = () => setWeekStart((ws) => addDays(ws, 7));
 
   const handleAddRoom = () => {
     const v = newRoom.trim();
@@ -278,6 +295,7 @@ const SessionSchedule = () => {
 
   const handleSaveSchedule = () => {
     if (!formData.title || !formData.startDate || !formData.startTime || !formData.endDate || !formData.endTime) {
+      alert('Vui lòng điền đầy đủ tiêu đề và thời gian.')
       return; // Add validation error handling
     }
     if (!isEditable) return;
@@ -293,6 +311,7 @@ const SessionSchedule = () => {
       end_time: endDateTime.toISOString(),
       place: selectedRoom,
       capacity: 50,
+      speakers: formData.speaker ? [Number(formData.speaker)] : [],
     }
 
     ;(async () => {
@@ -318,13 +337,23 @@ const SessionSchedule = () => {
   const canAddItem = !!selectedRoom && isEditable;
 
   const headerDateStr = today.toLocaleDateString("vi-VN", { day: "2-digit", month: "long", year: "numeric" });
+  const weekRangeStr = `${weekDays[0].toLocaleDateString('vi-VN',{day: '2-digit', month: 'short'})} - ${weekDays[6].toLocaleDateString('vi-VN',{day: '2-digit', month: 'short'})}`;
 
   return (
     <ConferenceLayout sidebarTitle="Hội nghị Công nghệ Số Việt Nam 2025">
       <div className="px-6 py-6">
         <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <div className="text-lg font-medium">Hôm nay | {headerDateStr}</div>
+          <div className="flex items-center gap-3">
+            <button onClick={goPrevWeek} className="p-2 rounded hover:bg-gray-100">
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <div className="text-lg font-medium">{weekRangeStr}</div>
+            <button onClick={goNextWeek} className="p-2 rounded hover:bg-gray-100">
+              <ChevronRight className="w-5 h-5" />
+            </button>
+            <div className="ml-3 text-sm text-muted-foreground">Hôm nay | {headerDateStr}</div>
+          </div>
             <div className="flex items-center gap-2">
             <Select value={selectedRoom} onValueChange={(v) => setSelectedRoom(v)}>
               <SelectTrigger className="w-40">
@@ -359,8 +388,9 @@ const SessionSchedule = () => {
             <div className="grid grid-cols-7 border-b">
               {weekDays.map((d, i) => {
                 const { dayOfWeek, dateStr } = formatDateLabel(d);
+                const isTodayCol = d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
                 return (
-                  <div key={i} className="px-4 py-3">
+                  <div key={i} className={`px-4 py-3 ${isTodayCol ? 'bg-gray-50' : ''}`}>
                     <div className="text-sm font-medium">{dayOfWeek}</div>
                     <div className="text-xs text-muted-foreground">{dateStr}</div>
                   </div>
@@ -386,11 +416,35 @@ const SessionSchedule = () => {
             <ScrollArea ref={daysScrollRef} className="h-full">
               <div className="grid grid-cols-7 relative" style={{ height: HOUR_HEIGHT * 24 }}>
                 {weekDays.map((day, dayIdx) => (
-                  <div key={dayIdx} className="relative border-l">
+                  <div key={dayIdx} className={`relative border-l ${day.getFullYear() === today.getFullYear() && day.getMonth() === today.getMonth() && day.getDate() === today.getDate() ? 'bg-gray-50' : ''}`}>
                     {/* hour lines */}
                     {Array.from({ length: 24 }, (_, h) => (
                       <div key={h} className="absolute left-0 right-0 h-px bg-border/50" style={{ top: h * HOUR_HEIGHT }} />
                     ))}
+
+                    {/* event time-frame overlay (green, low opacity) */}
+                    {event && event.start_time && event.end_time && (() => {
+                      try {
+                        const evStart = new Date(event.start_time);
+                        const evEnd = new Date(event.end_time);
+                        const dayStart = new Date(day);
+                        dayStart.setHours(0,0,0,0);
+                        const dayEnd = new Date(day);
+                        dayEnd.setHours(23,59,59,999);
+                        const frameStart = evStart > dayStart ? evStart : dayStart;
+                        const frameEnd = evEnd < dayEnd ? evEnd : dayEnd;
+                        if (frameStart < frameEnd) {
+                          const top = (minutesSinceMidnight(frameStart) / 60) * HOUR_HEIGHT;
+                          const height = ((frameEnd.getTime() - frameStart.getTime()) / (1000 * 60 * 60)) * HOUR_HEIGHT;
+                          return (
+                            <div className="absolute left-0 right-0 rounded" style={{ top, height, backgroundColor: 'rgba(16,185,129,0.1)', pointerEvents: 'none' }} />
+                          )
+                        }
+                      } catch (err) {
+                        return null;
+                      }
+                      return null;
+                    })()}
 
                     {/* events */}
                     <div className="relative h-full px-2">
@@ -530,14 +584,23 @@ const SessionSchedule = () => {
             {/* Speaker */}
             <div className="space-y-2">
               <Label htmlFor="speaker">Diễn giả trong phiên hội nghị</Label>
-              <Select value={formData.speaker} onValueChange={(value) => setFormData(prev => ({ ...prev, speaker: value }))}>
+              <Select value={String(formData.speaker)} onValueChange={(value) => setFormData(prev => ({ ...prev, speaker: value }))}>
                 <SelectTrigger id="speaker">
                   <SelectValue placeholder="Chọn diễn giả" />
                 </SelectTrigger>
                 <SelectContent>
                   {speakers.map((speaker) => (
-                    <SelectItem key={speaker.id} value={speaker.id}>
-                      {speaker.name}
+                    <SelectItem key={speaker.id} value={String(speaker.id)}>
+                      <div className="flex items-center gap-2">
+                        <Avatar className="h-6 w-6">
+                          {speaker.photo_url ? (
+                            <AvatarImage src={speaker.photo_url} alt={speaker.full_name} />
+                          ) : (
+                            <AvatarFallback className="bg-black/20 text-white">{getInitials(speaker.full_name)}</AvatarFallback>
+                          )}
+                        </Avatar>
+                        <span>{speaker.full_name}</span>
+                      </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
