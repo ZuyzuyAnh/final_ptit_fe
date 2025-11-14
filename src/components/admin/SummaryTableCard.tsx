@@ -1,3 +1,5 @@
+import { Link } from "react-router-dom";
+
 interface SummaryTableItem {
   id: number;
   title: string;
@@ -13,11 +15,13 @@ interface SummaryTableCardProps {
 
 export const SummaryTableCard = ({ title, items, linkText = "Xem tất cả" }: SummaryTableCardProps) => {
   return (
-    <div className="bg-secondary rounded-xl p-6 shadow-md">
+    <div className="bg-card rounded-xl p-6 shadow-md">
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-semibold text-lg">{title}</h3>
         <button className="text-sm text-primary hover:underline">
-          {linkText}
+          <Link to="/admin/conferences">
+            {linkText}
+          </Link>
         </button>
       </div>
 

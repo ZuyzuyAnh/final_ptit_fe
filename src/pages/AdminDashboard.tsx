@@ -13,7 +13,6 @@ type BarItem = { month: number; value: number };
 
 const AdminDashboard = () => {
   const { api, safeRequest } = useApi();
-
   const [pieData, setPieData] = useState<PieItem[]>([]);
   const [barData, setBarData] = useState<BarItem[]>([]);
   const [stats, setStats] = useState({ ongoing: 0, organizers: 0, total_events: 0 });
@@ -36,7 +35,25 @@ const AdminDashboard = () => {
       const path = `/admin/stats${qs ? `?${qs}` : ''}`
       const res = await api.get(path) as any
       if (res?.success && res.data) {
-        setPieData(res.data.pie || [])
+        const colors = [
+          '#FF6B6B', // coral red
+          '#4ECDC4', // turquoise
+          '#FFE66D', // sunny yellow
+          '#95E1D3', // mint green
+          '#A8E6CF', // light green
+          '#FFD93D', // golden yellow
+          '#6BCF7F', // fresh green
+          '#F38181', // soft pink
+          '#AA96DA', // lavender
+          '#FCBAD3', // light rose
+          '#A8D8EA', // sky blue
+          '#FFAAA5', // peach
+        ]
+        const pieWithColors = (res.data.pie || []).map((p: any, idx: number) => ({ 
+          ...p, 
+          color: colors[idx % colors.length] 
+        }))
+        setPieData(pieWithColors)
         setBarData(res.data.bar || [])
         setStats(res.data.stats || { ongoing: 0, organizers: 0, total_events: 0 })
         setLeaderboard(res.data.leaderboard || [])
@@ -54,32 +71,11 @@ const AdminDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Mock data for summary table
-  const summaryData = [
-    {
-      id: 1,
-      title: "Hội nghị Khởi nghiệp Sáng tạo 2025",
-      count: "100,000 lượt đăng ký",
-      subtitle: "từ hôm nay",
-    },
-    {
-      id: 2,
-      title: "Hội nghị Công nghệ Số Việt Nam 2025",
-      count: "50,000 lượt đăng ký",
-      subtitle: "từ hôm nay",
-    },
-    {
-      id: 3,
-      title: "Hội nghị STEM 2025",
-      count: "2,000 lượt đăng ký",
-      subtitle: "từ hôm nay",
-    },
-  ];
 
   return (
     <AdminLayout>
       <div className="mb-4 flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-        <div className="flex items-center gap-3">
+        {/* <div className="flex items-center gap-3">
           <div>
             <label className="text-xs text-muted-foreground">Window</label>
             <select value={timeWindow} onChange={(e) => setTimeWindow(e.target.value as any)} className="ml-2 p-2 rounded border">
@@ -120,7 +116,7 @@ const AdminDashboard = () => {
             if (timeWindow === 'year') { params.year = year }
             load(params)
           }} className="ml-3 px-3 py-2 bg-primary text-white rounded">Tải lại</button>
-        </div>
+        </div> */}
 
         <div className="text-sm text-muted-foreground">Dữ liệu được cache 60s (có thể cấu hình)</div>
       </div>
@@ -128,16 +124,14 @@ const AdminDashboard = () => {
         {/* Left Column */}
         <div className="space-y-6">
           <PieChartCard 
-            title="Số hội nghị theo chuyên mục (tháng này)" 
-            data={pieData.map((p, idx) => ({ ...p, color: idx % 2 === 0 ? 'hsl(var(--primary))' : 'hsl(var(--foreground))' }))} 
+            title="Số hội nghị theo chuyên mục" 
+            data={pieData} 
             initialYear={year}
             initialMonth={month}
             initialLimit={limit}
-            initialWindow={timeWindow}
-            initialDay={todayStr}
           />
           <BarChartCard 
-            title="Số hội nghị theo tháng (năm hiện tại)" 
+            title="Số hội nghị theo tháng" 
             data={barData.map(b => ({ name: String(b.month), value: b.value }))} 
             initialYear={year}
             initialWindow={timeWindow}

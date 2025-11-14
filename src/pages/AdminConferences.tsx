@@ -1,9 +1,10 @@
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Input } from "@/components/ui/input";
+import { Input as CustomInput } from "@/components/common/Input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { Search, Calendar, Trash2 } from "lucide-react";
+import { Search, Calendar, Trash2, Filter, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useApi } from "@/hooks/use-api";
 
@@ -27,6 +28,11 @@ const AdminConferences = () => {
   const [rawMapped, setRawMapped] = useState<Conference[]>([])
   const [organizers, setOrganizers] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(false)
+  const [showFilters, setShowFilters] = useState(false)
+
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 10
 
   // Filters
   const [searchQuery, setSearchQuery] = useState('')
@@ -136,6 +142,7 @@ const AdminConferences = () => {
     })
 
     setConferences(filtered)
+    setCurrentPage(1) // Reset to first page when filters change
   }
 
   const resetFilters = () => {
@@ -144,6 +151,19 @@ const AdminConferences = () => {
     setFilterEnd('')
     setFilterStatus('all')
     setConferences(rawMapped)
+    setShowFilters(false)
+    setCurrentPage(1) // Reset to first page
+  }
+
+  // Calculate pagination
+  const totalPages = Math.ceil(conferences.length / itemsPerPage)
+  const startIndex = (currentPage - 1) * itemsPerPage
+  const endIndex = startIndex + itemsPerPage
+  const paginatedConferences = conferences.slice(startIndex, endIndex)
+
+  const goToPage = (page: number) => {
+    setCurrentPage(page)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const getStatusBadge = (status: Conference["status"]) => {
@@ -189,48 +209,143 @@ const AdminConferences = () => {
   return (
     <AdminLayout>
       <div className="space-y-6">
-        {/* Filters */}
-        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
-          <div className="relative flex-1 max-w-md w-full">
+        {/* Search Bar with Filter Toggle */}
+        <div className="flex gap-3">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
             <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') applyFilters() }}
               placeholder="Nhập tên sự kiện, đối tác hoặc địa điểm để tìm kiếm"
-              className="pl-10"
+              className="pl-10 h-11"
             />
           </div>
+          
+          <Button
+            variant={showFilters ? "default" : "outline"}
+            size="default"
+            onClick={() => setShowFilters(!showFilters)}
+            className="h-11 px-4"
+          >
+            <Filter className="w-4 h-4 mr-2" />
+            Bộ lọc
+          </Button>
+        </div>
 
-          <div className="flex gap-2 items-center">
-            <div className="flex items-center gap-2">
-              <label className="text-sm">Từ</label>
-              <input type="date" value={filterStart} onChange={(e) => setFilterStart(e.target.value)} className="px-3 py-1 border rounded" />
+        {/* Collapsible Filter Panel */}
+        {showFilters && (
+          <div className="bg-card rounded-xl p-6 shadow-sm border space-y-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="font-heading font-semibold text-lg">Lọc hội nghị</h3>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowFilters(false)}
+                className="h-8 w-8"
+              >
+                <X className="w-4 h-4" />
+              </Button>
             </div>
-            <div className="flex items-center gap-2">
-              <label className="text-sm">Đến</label>
-              <input type="date" value={filterEnd} onChange={(e) => setFilterEnd(e.target.value)} className="px-3 py-1 border rounded" />
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Date Range */}
+              <div className="space-y-2">
+                <label className="font-heading text-foreground text-sm font-medium">
+                  Từ ngày
+                </label>
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    type="date"
+                    value={filterStart}
+                    onChange={(e) => setFilterStart(e.target.value)}
+                    className="pl-10 h-11"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="font-heading text-foreground text-sm font-medium">
+                  Đến ngày
+                </label>
+                <div className="relative">
+                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    type="date"
+                    value={filterEnd}
+                    onChange={(e) => setFilterEnd(e.target.value)}
+                    className="pl-10 h-11"
+                  />
+                </div>
+              </div>
+
+              {/* Status Filter */}
+              <div className="space-y-2 md:col-span-2">
+                <label className="font-heading text-foreground text-sm font-medium">
+                  Trạng thái
+                </label>
+                <select
+                  value={filterStatus}
+                  onChange={(e) => setFilterStatus(e.target.value as any)}
+                  className="flex h-11 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent transition-all duration-200"
+                >
+                  <option value="all">Tất cả trạng thái</option>
+                  <option value="ongoing">Đang diễn ra</option>
+                  <option value="upcoming">Sắp diễn ra</option>
+                  <option value="ended">Đã kết thúc</option>
+                </select>
+              </div>
             </div>
 
-            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value as any)} className="px-3 py-1 border rounded bg-background text-sm">
-              <option value="all">Tất cả trạng thái</option>
-              <option value="ongoing">Đang diễn ra</option>
-              <option value="upcoming">Sắp diễn ra</option>
-              <option value="ended">Đã kết thúc</option>
-            </select>
-
-            <div className="flex items-center gap-2">
-              <button onClick={applyFilters} className="px-3 py-1 bg-primary text-white rounded">Áp dụng</button>
-              <button onClick={resetFilters} className="px-3 py-1 border rounded">Đặt lại</button>
-              <button onClick={() => { void load() }} className="px-3 py-1 border rounded">Làm mới</button>
+            {/* Action Buttons */}
+            <div className="flex gap-3 pt-2">
+              <Button
+                onClick={applyFilters}
+                className="flex-1 h-11 font-heading"
+              >
+                Áp dụng bộ lọc
+              </Button>
+              <Button
+                variant="outline"
+                onClick={resetFilters}
+                className="h-11 px-6 font-heading"
+              >
+                Đặt lại
+              </Button>
             </div>
           </div>
+        )}
+
+        {/* Results Summary */}
+        <div className="flex items-center justify-end">
+          {/* <p className="text-sm text-muted-foreground">
+            Hiển thị <span className="font-semibold text-foreground">{conferences.length}</span> hội nghị
+          </p> */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { void load() }}
+            className="h-9"
+          >
+            Làm mới
+          </Button>
         </div>
 
         {/* Table */}
         <div className="bg-card rounded-xl shadow-sm border overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full">
+            <table className="w-full table-fixed">
+              <colgroup>
+                <col className="w-[20%]" /> {/* Tên sự kiện */}
+                <col className="w-[14%]" /> {/* Thời gian bắt đầu */}
+                <col className="w-[14%]" /> {/* Thời gian kết thúc */}
+                <col className="w-[12%]" /> {/* Địa điểm */}
+                <col className="w-[15%]" /> {/* Đối tác */}
+                <col className="w-[12%]" /> {/* Trạng thái */}
+                <col className="w-[6%]" />  {/* Khoá/Mở khoá */}
+                <col className="w-[6%]" />  {/* Hành động */}
+              </colgroup>
               <thead>
                 <tr className="bg-foreground text-background">
                   <th className="px-6 py-4 text-left text-sm font-semibold">
@@ -251,16 +366,16 @@ const AdminConferences = () => {
                   <th className="px-6 py-4 text-left text-sm font-semibold">
                     TRẠNG THÁI
                   </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold">
-                    KHOÁ/MỞ KHOÁ
+                  <th className="px-4 py-4 text-center text-sm font-semibold">
+                    HIỂN THỊ
                   </th>
-                  <th className="px-6 py-4 text-left text-sm font-semibold">
-                    HÀNH ĐỘNG
+                  <th className="px-4 py-4 text-center text-sm font-semibold">
+                    XOÁ
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {conferences.map((conference, index) => (
+                {paginatedConferences.map((conference, index) => (
                   <tr
                     key={conference.id}
                     className={`border-b hover:bg-muted/50 ${
@@ -268,41 +383,55 @@ const AdminConferences = () => {
                     }`}
                   >
                     <td className="px-6 py-4 text-sm font-medium">
-                      {conference.name}
+                      <div className="truncate" title={conference.name}>
+                        {conference.name}
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-muted-foreground">
-                      {conference.startDate}
+                      <div className="truncate">
+                        {conference.startDate}
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-sm text-muted-foreground">
-                      {conference.endDate}
+                      <div className="truncate">
+                        {conference.endDate}
+                      </div>
                     </td>
-                    <td className="px-6 py-4 text-sm">{conference.venue}</td>
                     <td className="px-6 py-4 text-sm">
-                      <div className="text-muted-foreground">
+                      <div className="truncate" title={conference.venue}>
+                        {conference.venue}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-sm">
+                      <div className="text-muted-foreground truncate" title={conference.organizer}>
                         {conference.organizer}
                       </div>
-                      <div className="text-xs text-muted-foreground">
+                      <div className="text-xs text-muted-foreground truncate" title={conference.contact}>
                         {conference.contact}
                       </div>
                     </td>
                     <td className="px-6 py-4">
                       {getStatusBadge(conference.status)}
                     </td>
-                    <td className="px-6 py-4">
-                      <Switch
-                        checked={conference.isVisible}
-                        onCheckedChange={() => toggleVisibility(conference.id)}
-                      />
+                    <td className="px-4 py-4 text-center">
+                      <div className="flex justify-center">
+                        <Switch
+                          checked={conference.isVisible}
+                          onCheckedChange={() => toggleVisibility(conference.id)}
+                        />
+                      </div>
                     </td>
-                    <td className="px-6 py-4">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => deleteConference(conference.id)}
-                        className="text-muted-foreground hover:text-destructive"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </Button>
+                    <td className="px-4 py-4 text-center">
+                      <div className="flex justify-center">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => deleteConference(conference.id)}
+                          className="text-muted-foreground hover:text-destructive h-8 w-8"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -311,42 +440,69 @@ const AdminConferences = () => {
           </div>
 
           {/* Pagination */}
-          <div className="flex items-center justify-between px-6 py-4 border-t">
-            <div className="text-sm text-muted-foreground">
-              Hiển thị 1 - 7 trên tổng 7 bản ghi
+          {totalPages > 0 && (
+            <div className="flex items-center justify-between px-6 py-4 border-t">
+              <div className="text-sm text-muted-foreground">
+                Hiển thị {startIndex + 1} - {Math.min(endIndex, conferences.length)} trên tổng {conferences.length} bản ghi
+              </div>
+              {totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  {/* Previous button */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => goToPage(currentPage - 1)}
+                    disabled={currentPage === 1}
+                    className="h-8 px-3"
+                  >
+                    Trước
+                  </Button>
+
+                  {/* Page numbers */}
+                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                    // Show first page, last page, current page, and pages around current
+                    const showPage = 
+                      page === 1 || 
+                      page === totalPages || 
+                      (page >= currentPage - 1 && page <= currentPage + 1)
+                    
+                    // Show ellipsis
+                    const showEllipsisBefore = page === currentPage - 2 && currentPage > 3
+                    const showEllipsisAfter = page === currentPage + 2 && currentPage < totalPages - 2
+
+                    if (showEllipsisBefore || showEllipsisAfter) {
+                      return <span key={page} className="text-muted-foreground px-1">...</span>
+                    }
+
+                    if (!showPage) return null
+
+                    return (
+                      <Button
+                        key={page}
+                        variant={currentPage === page ? "default" : "ghost"}
+                        size="sm"
+                        onClick={() => goToPage(page)}
+                        className="w-8 h-8 p-0 rounded-full"
+                      >
+                        {page}
+                      </Button>
+                    )
+                  })}
+
+                  {/* Next button */}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => goToPage(currentPage + 1)}
+                    disabled={currentPage === totalPages}
+                    className="h-8 px-3"
+                  >
+                    Sau
+                  </Button>
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="default"
-                size="sm"
-                className="w-8 h-8 p-0 rounded-full"
-              >
-                1
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-8 h-8 p-0 rounded-full"
-              >
-                2
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-8 h-8 p-0 rounded-full"
-              >
-                3
-              </Button>
-              <span className="text-muted-foreground">...</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="w-8 h-8 p-0 rounded-full"
-              >
-                10
-              </Button>
-            </div>
-          </div>
+          )}
         </div>
       </div>
     </AdminLayout>

@@ -149,12 +149,6 @@ const Login = () => {
       <div className="w-full lg:w-1/2 flex items-center justify-center p-8">
         <div className="w-full max-w-md space-y-8">
           <div className="text-center lg:text-left">
-            <div className="flex items-center justify-center lg:justify-start gap-2 mb-6">
-              <div className="w-10 h-10 bg-primary rounded-lg flex items-center justify-center">
-                <span className="text-primary-foreground font-bold text-xl">C</span>
-              </div>
-              <span className="font-heading font-bold text-2xl">Conferdent</span>
-            </div>
             <h2 className="font-heading text-3xl font-bold mb-2">Đăng nhập</h2>
           </div>
 
@@ -191,7 +185,7 @@ const Login = () => {
             </Button>
           </form>
 
-          <div className="text-center space-y-4">
+          {/* <div className="text-center space-y-4">
 
             <div className="flex items-center justify-center">
               <hr className="w-1/4"/>
@@ -204,8 +198,13 @@ const Login = () => {
                 tại đây
               </Link>
             </p>
-          </div>
+          </div> */}
         </div>
+      </div>
+
+
+      <div className="absolute w-15 h- bg-primary rounded-lg flex items-center justify-center right-10 bottom-10">
+          <img src="/logo.png" alt="Logo" className="w-full h-full object-cover"/>
       </div>
     </div>
   );

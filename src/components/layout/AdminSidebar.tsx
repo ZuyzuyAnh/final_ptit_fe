@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 const navItems = [
   { label: "Trang chủ", path: "/admin", icon: Home },
   { label: "Quản lý hội nghị", path: "/admin/conferences", icon: Calendar },
-  { label: "Quản lý yêu cầu", path: "/admin/requests", icon: FileText },
+  // { label: "Quản lý yêu cầu", path: "/admin/requests", icon: FileText },
   { label: "Quản lý người dùng", path: "/admin/users", icon: Users },
 ];
 
@@ -18,21 +18,21 @@ export const AdminSidebar = () => {
   return (
     <aside className="w-64 bg-card border-r h-screen sticky top-0 flex flex-col">
       <div className="p-6">
-        <h1 className="text-xl font-bold">Conferdent</h1>
-        <p className="text-sm text-muted-foreground">Admin Console</p>
+        <h1 className="text-3xl font-bold font-heading">Conferdent</h1>
+        <p className="text-sm text-muted-foreground font-heading">Admin Console</p>
       </div>
 
-      <nav className="px-4 space-y-1 overflow-y-auto">
+      <nav className="px-4 space-y-4 overflow-y-auto">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
             end={item.path === "/admin"}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
+              `flex items-center justify-center gap-3 px-4 py-3 rounded-lg text-sm font-heading font-medium transition-colors ${
                 isActive
                   ? "bg-foreground text-background"
-                  : "text-foreground hover:bg-accent"
+                  : "text-foreground hover:bg-accent bg-muted"
               }`
             }
           >
