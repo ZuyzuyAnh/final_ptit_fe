@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { useApi } from "@/hooks/use-api";
+import { LocationPicker } from "@/components/common/LocationPicker";
 
 interface Speaker {
   id: string;
@@ -479,32 +480,30 @@ const CreateConference = () => {
             <div className="space-y-2">
               <Label className="text-base font-medium">Địa điểm tổ chức *</Label>
               <Input
-                placeholder="Trung tâm hội nghị Quốc Gia, TP. Hà Nội"
+                placeholder="Chọn vị trí trên bản đồ để tự động điền địa chỉ"
                 value={formData.location}
                 onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                 required
               />
+              <p className="text-xs text-muted-foreground">
+                Địa chỉ sẽ tự động cập nhật khi bạn chọn vị trí trên bản đồ. Bạn cũng có thể chỉnh sửa thủ công.
+              </p>
             </div>
 
-            {/* Coordinates */}
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                label="Vĩ độ (Latitude) *"
-                type="number"
-                step="any"
-                placeholder="21.0285"
-                value={formData.lat}
-                onChange={(e) => setFormData({ ...formData, lat: e.target.value })}
-                required
-              />
-              <Input
-                label="Kinh độ (Longitude) *"
-                type="number"
-                step="any"
-                placeholder="105.8542"
-                value={formData.lng}
-                onChange={(e) => setFormData({ ...formData, lng: e.target.value })}
-                required
+            {/* Map Location Picker */}
+            <div className="space-y-2">
+              <Label className="text-base font-medium">Chọn vị trí trên bản đồ *</Label>
+              <LocationPicker
+                lat={formData.lat ? Number(formData.lat) : null}
+                lng={formData.lng ? Number(formData.lng) : null}
+                onLocationSelect={(lat, lng, locationName) => {
+                  setFormData({
+                    ...formData,
+                    lat: lat.toString(),
+                    lng: lng.toString(),
+                    location: locationName,
+                  });
+                }}
               />
             </div>
 
