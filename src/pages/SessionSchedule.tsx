@@ -7,10 +7,12 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Plus, X, ChevronLeft, ChevronRight } from "lucide-react";
 import { useApi } from "@/hooks/use-api";
+import { RoomSelector } from "@/components/conference/RoomSelector";
 
 type CalendarItem = {
   id: string;
@@ -72,7 +74,6 @@ const SessionSchedule = () => {
   const { api, safeRequest } = useApi();
   const [places, setPlaces] = useState<{ id: string; name: string }[]>([]);
   const [selectedRoom, setSelectedRoom] = useState<string | undefined>(undefined);
-  const [newRoom, setNewRoom] = useState("");
 
   // Dialog state
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -91,6 +92,12 @@ const SessionSchedule = () => {
 
   const [event, setEvent] = useState<any | null>(null);
   const [isEditable, setIsEditable] = useState(true);
+
+  // Delete confirmation state
+  const [deleteConfirm, setDeleteConfirm] = useState<{ isOpen: boolean; sessionId: string | null }>({
+    isOpen: false,
+    sessionId: null,
+  });
 
   // Scroll sync refs
   const timeScrollRef = useRef<HTMLDivElement>(null);
@@ -226,33 +233,54 @@ const SessionSchedule = () => {
   const goPrevWeek = () => setWeekStart((ws) => addDays(ws, -7));
   const goNextWeek = () => setWeekStart((ws) => addDays(ws, 7));
 
-  const handleAddRoom = () => {
-    const v = newRoom.trim();
-    if (!v || !id) return;
-    // Call API to create place
-    (async () => {
-      const res = await safeRequest(() => api.post('/organizer/places', { event_id: id, name: v }))
-      const data = (res as any)?.data ?? res ?? null
-      if (data) {
-        setPlaces((ps) => [...ps, { id: data.id || data._id, name: data.name }])
-        setSelectedRoom(v)
-        setNewRoom('')
-      }
-    })()
+  const handleAddRoom = async (roomName: string) => {
+    if (!id) return;
+    const res = await safeRequest(() => api.post('/organizer/places', { event_id: id, name: roomName }))
+    const data = (res as any)?.data ?? res ?? null
+    if (data) {
+      setPlaces((ps) => [...ps, { id: data.id || data._id, name: data.name }])
+      setSelectedRoom(roomName)
+    }
   };
 
-  const handleDeleteRoom = async () => {
-    if (!selectedRoom) return;
-    const place = places.find((p) => p.name === selectedRoom);
-    if (!place) return;
-    const res = await safeRequest(() => api.delete(`/organizer/places/${place.id}`))
+  const handleEditRoom = async (roomId: string, newName: string) => {
+    const res = await safeRequest(() => api.patch(`/organizer/places/${roomId}`, { name: newName }))
     if (res !== undefined) {
-      setPlaces((ps) => ps.filter((p) => p.id !== place.id))
-      setSelectedRoom(places.length > 0 ? places[0]?.name : undefined)
+      setPlaces((ps) => ps.map((p) => p.id === roomId ? { ...p, name: newName } : p))
+      if (selectedRoom === places.find(p => p.id === roomId)?.name) {
+        setSelectedRoom(newName)
+      }
+    }
+  };
+
+  const handleDeleteRoom = async (roomId: string) => {
+    const roomToDelete = places.find((p) => p.id === roomId);
+    if (!roomToDelete) return;
+    
+    // Delete all sessions in this room first
+    const sessionsToDelete = items.filter((item) => item.room === roomToDelete.name);
+    for (const session of sessionsToDelete) {
+      await safeRequest(() => api.delete(`/organizer/sessions/${session.id}`));
+    }
+    
+    // Delete the room
+    const res = await safeRequest(() => api.delete(`/organizer/places/${roomId}`))
+    if (res !== undefined) {
+      setPlaces((ps) => ps.filter((p) => p.id !== roomId))
+      setItems((items) => items.filter((item) => item.room !== roomToDelete.name))
+      // Select first available room or undefined
+      const remainingRooms = places.filter((p) => p.id !== roomId)
+      setSelectedRoom(remainingRooms.length > 0 ? remainingRooms[0]?.name : undefined)
     }
   }
 
   const handleOpenDialog = () => {
+    // Check if a room is selected first
+    if (!selectedRoom) {
+      alert('Vui lòng thêm phòng trước khi tạo phiên hội nghị.');
+      return;
+    }
+    
     // Initialize form with current date/time
     const now = new Date();
     const tomorrow = new Date(now);
@@ -334,6 +362,16 @@ const SessionSchedule = () => {
     })()
   };
 
+  const handleDeleteSession = async () => {
+    if (!deleteConfirm.sessionId) return;
+    
+    const ok = await safeRequest(() => api.delete(`/organizer/sessions/${deleteConfirm.sessionId}`));
+    if (ok !== undefined) {
+      setItems(prev => prev.filter(i => i.id !== deleteConfirm.sessionId));
+    }
+    setDeleteConfirm({ isOpen: false, sessionId: null });
+  };
+
   const canAddItem = !!selectedRoom && isEditable;
 
   const headerDateStr = today.toLocaleDateString("vi-VN", { day: "2-digit", month: "long", year: "numeric" });
@@ -354,27 +392,17 @@ const SessionSchedule = () => {
             </button>
             <div className="ml-3 text-sm text-muted-foreground">Hôm nay | {headerDateStr}</div>
           </div>
-            <div className="flex items-center gap-2">
-            <Select value={selectedRoom} onValueChange={(v) => setSelectedRoom(v)}>
-              <SelectTrigger className="w-40">
-                <SelectValue placeholder="Chọn phòng" />
-              </SelectTrigger>
-              <SelectContent>
-                {places.map((r) => (
-                  <SelectItem key={r.id} value={r.name}>
-                    {r.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Input value={newRoom} onChange={(e) => setNewRoom(e.target.value)} placeholder="Thêm phòng..." className="w-40" />
-            <Button variant="secondary" onClick={handleAddRoom} disabled={!isEditable}>
-              Thêm mới
-            </Button>
-            <Button variant="destructive" onClick={handleDeleteRoom} disabled={!isEditable || !selectedRoom}>
-              Xóa phòng
-            </Button>
-            <Button disabled={!canAddItem} onClick={handleOpenDialog}>
+          <div className="flex items-center gap-2">
+            <RoomSelector
+              rooms={places}
+              selectedRoom={selectedRoom}
+              onSelectRoom={setSelectedRoom}
+              onAddRoom={handleAddRoom}
+              onEditRoom={handleEditRoom}
+              onDeleteRoom={handleDeleteRoom}
+              disabled={!isEditable}
+            />
+            <Button onClick={handleOpenDialog}>
               Thêm lịch
             </Button>
           </div>
@@ -457,7 +485,7 @@ const SessionSchedule = () => {
                         return (
                           <div
                             key={it.id}
-                            className="absolute left-2 right-2 rounded-xl shadow-sm text-white"
+                            className="absolute left-2 right-2 rounded-xl shadow-sm text-white overflow-clip"
                             style={{ top, height, backgroundColor: color }}
                           >
                             <div className="p-3 space-y-2 text-sm">
@@ -466,27 +494,26 @@ const SessionSchedule = () => {
                                 {isEditable && (
                                   <button
                                     className="ml-2 text-xs bg-black/20 rounded px-2 py-1"
-                                    onClick={async () => {
-                                      // delete session
-                                      const ok = await safeRequest(() => api.delete(`/organizer/sessions/${it.id}`));
-                                      if (ok !== undefined) setItems(prev => prev.filter(i => i.id !== it.id));
-                                    }}
+                                    onClick={() => setDeleteConfirm({ isOpen: true, sessionId: it.id })}
                                   >Xóa</button>
                                 )}
                               </div>
                               <div className="flex items-center gap-2 text-xs opacity-90">
-                                <Avatar className="h-6 w-6 ring-2 ring-white/50">
+                                <span>
+                                  {s.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} -
+                                  {" "}
+                                  {e.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
+                                </span>
+                              </div>
+
+                              <div className='justify-items-start items-end pt-3'>
+                                  <Avatar className="h-6 w-6 ring-2 ring-white/50">
                                   {it.speaker?.avatarUrl ? (
                                     <AvatarImage src={it.speaker.avatarUrl} alt={it.speaker.name} />
                                   ) : (
                                     <AvatarFallback className="bg-black/20 text-white">{getInitials(it.speaker?.name)}</AvatarFallback>
                                   )}
                                 </Avatar>
-                                <span>
-                                  {s.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })} -
-                                  {" "}
-                                  {e.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" })}
-                                </span>
                               </div>
                             </div>
                           </div>
@@ -658,6 +685,24 @@ const SessionSchedule = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Session Confirmation Dialog */}
+      <AlertDialog open={deleteConfirm.isOpen} onOpenChange={(isOpen) => setDeleteConfirm({ isOpen, sessionId: null })}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xác nhận xóa phiên hội nghị</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bạn có chắc chắn muốn xóa phiên hội nghị này? Hành động này không thể hoàn tác.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDeleteSession} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              Xóa
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       </div>
     </ConferenceLayout>
   );

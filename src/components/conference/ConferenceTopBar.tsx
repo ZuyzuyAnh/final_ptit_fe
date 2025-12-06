@@ -13,7 +13,7 @@ export const ConferenceTopBar: React.FC<ConferenceTopBarProps> = ({ title, actio
 
 	return (
 		<div className="sticky top-16 z-40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border">
-			<div className="max-w-7xl mx-auto px-6 py-4">
+			<div className="max-w-8xl mx-auto px-6 py-4">
 				<div className="flex items-center justify-between gap-4">
 					<h1 className="text-xl md:text-4xl font-heading font-semibold">{title}</h1>
 					{actions && (
