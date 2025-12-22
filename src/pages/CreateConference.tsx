@@ -691,7 +691,7 @@ const CreateConference = () => {
 
           {/* Right Reviewer Section */}
           <div className="flex flex-col">
-            <div className="bg-card rounded-xl p-8 shadow-sm h-fit flex flex-col">
+            <div className="bg-card rounded-xl p-8 shadow-sm h-fit flex flex-col sticky top-32">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="font-heading font-medium text-lg">Danh sách diễn giả</h2>
                 <Button variant="secondary" onClick={() => handleOpenSpeakerModal()}>

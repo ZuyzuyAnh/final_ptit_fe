@@ -87,6 +87,8 @@ const SessionSchedule = () => {
     speaker: "",
     files: [] as { name: string; url?: string }[],
   });
+  // Edit state
+  const [editSessionId, setEditSessionId] = useState<string | null>(null);
 
   const [speakers, setSpeakers] = useState<{ id: number; full_name: string; photo_url?: string }[]>([])
 
@@ -274,29 +276,46 @@ const SessionSchedule = () => {
     }
   }
 
-  const handleOpenDialog = () => {
-    // Check if a room is selected first
-    if (!selectedRoom) {
+  // Open dialog for new or edit
+  const handleOpenDialog = (session?: CalendarItem) => {
+    if (!selectedRoom && !session) {
       alert('Vui lòng thêm phòng trước khi tạo phiên hội nghị.');
       return;
     }
-    
-    // Initialize form with current date/time
-    const now = new Date();
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    
-    setFormData({
-      title: "",
-      description: "",
-      startDate: now.toISOString().split('T')[0],
-      startTime: "09:00",
-      endDate: tomorrow.toISOString().split('T')[0],
-      endTime: "17:00",
-      speaker: "",
-      files: [],
-    });
-    setIsDialogOpen(true);
+    if (session) {
+      // Edit mode
+      const start = new Date(session.start);
+      const end = new Date(session.end);
+      setFormData({
+        title: session.title,
+        description: session.description || "",
+        startDate: start.toISOString().split('T')[0],
+        startTime: start.toTimeString().slice(0,5),
+        endDate: end.toISOString().split('T')[0],
+        endTime: end.toTimeString().slice(0,5),
+        speaker: session.speaker?.name ? (speakers.find(s => s.full_name === session.speaker?.name)?.id?.toString() || "") : "",
+        files: session.files || [],
+      });
+      setEditSessionId(session.id);
+      setIsDialogOpen(true);
+    } else {
+      // New mode
+      const now = new Date();
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      setFormData({
+        title: "",
+        description: "",
+        startDate: now.toISOString().split('T')[0],
+        startTime: "09:00",
+        endDate: tomorrow.toISOString().split('T')[0],
+        endTime: "17:00",
+        speaker: "",
+        files: [],
+      });
+      setEditSessionId(null);
+      setIsDialogOpen(true);
+    }
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -324,7 +343,7 @@ const SessionSchedule = () => {
   const handleSaveSchedule = () => {
     if (!formData.title || !formData.startDate || !formData.startTime || !formData.endDate || !formData.endTime) {
       alert('Vui lòng điền đầy đủ tiêu đề và thời gian.')
-      return; // Add validation error handling
+      return;
     }
     if (!isEditable) return;
 
@@ -340,26 +359,47 @@ const SessionSchedule = () => {
       place: selectedRoom,
       capacity: 50,
       speakers: formData.speaker ? [Number(formData.speaker)] : [],
-    }
+    };
 
-    ;(async () => {
-      const res = await safeRequest(() => api.post('/organizer/sessions', payload))
-      const data = (res as any)?.data ?? res ?? null
-      if (data) {
-        const newItem: CalendarItem = {
-          id: String(data.id || data._id || Date.now()),
-          title: data.title,
-          description: data.description,
-          start: data.start_time,
-          end: data.end_time,
-          speaker: undefined,
-          room: data.place,
-          files: [],
+    (async () => {
+      if (editSessionId) {
+        // Edit mode
+        const res = await safeRequest(() => api.patch(`/organizer/sessions/${editSessionId}/properties`, payload));
+        const data = (res as any)?.data ?? res ?? null;
+        if (data) {
+          setItems(prev => prev.map(item => item.id === editSessionId ? {
+            ...item,
+            title: data.title,
+            description: data.description,
+            start: data.start_time,
+            end: data.end_time,
+            speaker: data.speakers && data.speakers.length > 0 ? { name: data.speakers[0].full_name, avatarUrl: data.speakers[0].photo_url } : undefined,
+            room: data.place,
+            files: [],
+          } : item));
+          setIsDialogOpen(false);
+          setEditSessionId(null);
         }
-        setItems(prev => [...prev, newItem])
-        setIsDialogOpen(false)
+      } else {
+        // New mode
+        const res = await safeRequest(() => api.post('/organizer/sessions', payload));
+        const data = (res as any)?.data ?? res ?? null;
+        if (data) {
+          const newItem: CalendarItem = {
+            id: String(data.id || data._id || Date.now()),
+            title: data.title,
+            description: data.description,
+            start: data.start_time,
+            end: data.end_time,
+            speaker: data.speakers && data.speakers.length > 0 ? { name: data.speakers[0].full_name, avatarUrl: data.speakers[0].photo_url } : undefined,
+            room: data.place,
+            files: [],
+          };
+          setItems(prev => [...prev, newItem]);
+          setIsDialogOpen(false);
+        }
       }
-    })()
+    })();
   };
 
   const handleDeleteSession = async () => {
@@ -402,7 +442,7 @@ const SessionSchedule = () => {
               onDeleteRoom={handleDeleteRoom}
               disabled={!isEditable}
             />
-            <Button onClick={handleOpenDialog}>
+            <Button onClick={() => handleOpenDialog()}>
               Thêm lịch
             </Button>
           </div>
@@ -485,8 +525,9 @@ const SessionSchedule = () => {
                         return (
                           <div
                             key={it.id}
-                            className="absolute left-2 right-2 rounded-xl shadow-sm text-white overflow-clip"
+                            className="absolute left-2 right-2 rounded-xl shadow-sm text-white overflow-clip cursor-pointer"
                             style={{ top, height, backgroundColor: color }}
+                            onClick={() => isEditable && handleOpenDialog(it)}
                           >
                             <div className="p-3 space-y-2 text-sm">
                               <div className="flex justify-between items-start">
@@ -494,7 +535,7 @@ const SessionSchedule = () => {
                                 {isEditable && (
                                   <button
                                     className="ml-2 text-xs bg-black/20 rounded px-2 py-1"
-                                    onClick={() => setDeleteConfirm({ isOpen: true, sessionId: it.id })}
+                                    onClick={e => { e.stopPropagation(); setDeleteConfirm({ isOpen: true, sessionId: it.id }); }}
                                   >Xóa</button>
                                 )}
                               </div>
@@ -532,7 +573,7 @@ const SessionSchedule = () => {
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Thêm phiên hội nghị</DialogTitle>
+            <DialogTitle>{editSessionId ? "Chỉnh sửa phiên hội nghị" : "Thêm phiên hội nghị"}</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 py-4">

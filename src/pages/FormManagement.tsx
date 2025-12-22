@@ -54,12 +54,12 @@ const FormManagement = () => {
   const [formId, setFormId] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [eventData, setEventData] = useState<any>(null)
-  const [registrationCount, setRegistrationCount] = useState<number>(0)
+  const [statistics, setStatistics] = useState<{ registered: number }>({ registered: 0 });
 
   const formInfo = {
     displayStatus: isPublished ? "Đã xuất bản" : "Chưa xuất bản",
-    maxRegistrations: eventData?.capacity ? String(eventData.capacity) : "N/A",
-    currentRegistrations: String(registrationCount),
+    maxRegistrations: eventData?.data?.capacity ? String(eventData.data.capacity) : "N/A",
+    currentRegistrations: statistics.registered,
     contactEmail: eventData?.organizer?.email || eventData?.contact_email || "N/A",
   };
 
@@ -304,11 +304,6 @@ const FormManagement = () => {
         setEventData(event)
       }
 
-      // Load registration count
-      const registrations: any = await safeRequest(() => api.get(`/organizer/event-registrations/event/${id}`))
-      if (registrations && Array.isArray(registrations.data)) {
-        setRegistrationCount(registrations.data.length)
-      }
 
       // Load form data
       const form: any = await safeRequest(() => api.get(`/organizer/events/forms/event/${id}`))
@@ -338,6 +333,18 @@ const FormManagement = () => {
           }
         })
         if (mapped.length > 0) setFields(mapped)
+        // Only load registration statistics if form is public
+        if (form.is_public) {
+          const stRes: any = await safeRequest(() => api.get(`/organizer/events/${id}/statistics`));
+          const stData = (stRes as any)?.data ?? stRes ?? null;
+          if (stData) {
+            setStatistics({
+              registered: stData.registered ?? stData.totalRegistrations ?? 0,
+            });
+          }
+        } else {
+          setStatistics({ registered: 0 });
+        }
       }
     }
 
@@ -387,7 +394,7 @@ const FormManagement = () => {
             </CardContent>
           </Card>
 
-          {/* Thumbnail Upload */}
+          {/* Thumbnail Upload
           <Card>
             <CardContent className="pt-6">
               <Label htmlFor="thumbnail" className="block mb-2">
@@ -427,7 +434,7 @@ const FormManagement = () => {
                 )}
               </div>
             </CardContent>
-          </Card>
+          </Card> */}
 
           {/* Form Fields */}
           <div className="space-y-4">
@@ -607,14 +614,16 @@ const FormManagement = () => {
                   <Label className="text-sm text-muted-foreground">Số lượng đăng ký tối đa:</Label>
                   <p className="font-medium">{formInfo.maxRegistrations}</p>
                 </div>
-                <div>
-                  <Label className="text-sm text-muted-foreground">Số lượng đăng ký hiện tại:</Label>
-                  <p className="font-medium">{formInfo.currentRegistrations}</p>
-                </div>
-                <div>
+                {isPublished && (
+                  <div>
+                    <Label className="text-sm text-muted-foreground">Số lượng đăng ký hiện tại:</Label>
+                    <p className="font-medium">{formInfo.currentRegistrations}</p>
+                  </div>
+                )}
+                {/* <div>
                   <Label className="text-sm text-muted-foreground">Email liên hệ:</Label>
                   <p className="font-medium">{formInfo.contactEmail}</p>
-                </div>
+                </div> */}
                 <div className="pt-4 space-y-2">
                   <Button 
                     variant="outline" 
