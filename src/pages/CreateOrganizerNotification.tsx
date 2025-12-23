@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useApi } from "@/hooks/use-api";
 import {
   Select,
   SelectContent,
@@ -23,32 +24,149 @@ import { format } from "date-fns";
 import { CalendarIcon, ArrowLeft, Send } from "lucide-react";
 import { organizerNotificationApi } from "@/lib/organizerNotificationApi";
 import { useToast } from "@/hooks/use-toast";
-import DashboardLayout from "@/components/layout/DashboardLayout";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { RecurringScheduleForm } from "@/components/common/RecurringScheduleForm";
+import type {
+  CommonCronPattern,
+  CronValidationResponse,
+} from "@/types/notifications";
 
 export default function CreateOrganizerNotification() {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { api, safeRequest } = useApi();
   const [loading, setLoading] = useState(false);
   const [scheduledDate, setScheduledDate] = useState<Date>();
   const [scheduledTime, setScheduledTime] = useState("");
+  const [events, setEvents] = useState<Array<{ _id: string; name: string }>>(
+    []
+  );
+  const [loadingEvents, setLoadingEvents] = useState(false);
+
+  // Recurring schedule state
+  const [commonPatterns, setCommonPatterns] = useState<CommonCronPattern[]>([]);
+  const [cronValidation, setCronValidation] =
+    useState<CronValidationResponse | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
 
   const [formData, setFormData] = useState({
     title: "",
     body: "",
     image_url: "",
-    scope: "event" as "event" | "organizer",
-    target_id: "",
-    action_type: "none",
-    action_value: "",
+    target_event_id: "",
+    // Schedule type
+    schedule_type: "immediate" as "immediate" | "one-time" | "recurring",
+    // Recurring fields
+    cron_pattern: "",
+    timezone: "Asia/Ho_Chi_Minh",
+    recurrence_end_date: "",
   });
+
+  // Fetch organizer's events
+  useEffect(() => {
+    loadEvents();
+  }, []);
+
+  // Load common cron patterns
+  useEffect(() => {
+    const loadPatterns = async () => {
+      try {
+        const patterns = await organizerNotificationApi.getCommonPatterns();
+        setCommonPatterns(patterns);
+      } catch (error) {
+        console.error("Failed to load cron patterns:", error);
+      }
+    };
+    void loadPatterns();
+  }, []);
+
+  // Validate cron pattern with debounce
+  useEffect(() => {
+    if (
+      formData.schedule_type === "recurring" &&
+      formData.cron_pattern &&
+      formData.timezone
+    ) {
+      const timer = setTimeout(async () => {
+        setIsValidating(true);
+        try {
+          const validation = await organizerNotificationApi.validateCron({
+            cron_pattern: formData.cron_pattern,
+            timezone: formData.timezone,
+          });
+          setCronValidation(validation);
+        } catch (error) {
+          console.error("Cron validation error:", error);
+          setCronValidation({
+            isValid: false,
+            error: "Không thể kiểm tra cron pattern",
+            description: null,
+            nextExecutions: [],
+          });
+        } finally {
+          setIsValidating(false);
+        }
+      }, 500);
+
+      return () => clearTimeout(timer);
+    } else {
+      setCronValidation(null);
+    }
+  }, [formData.cron_pattern, formData.timezone, formData.schedule_type]);
+
+  const loadEvents = async () => {
+    setLoadingEvents(true);
+    try {
+      const response = await safeRequest(() =>
+        api.get("/organizer/events/my-events")
+      );
+      if (response) {
+        const data = (response as any)?.data || response;
+        const eventsData = Array.isArray(data) ? data : [];
+        setEvents(eventsData);
+      }
+    } catch (error) {
+      console.error("Error fetching events:", error);
+    } finally {
+      setLoadingEvents(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent, sendNow: boolean = false) => {
     e.preventDefault();
+
+    // Validate scheduling if not sending now
+    if (formData.schedule_type === "one-time" && !sendNow) {
+      if (!scheduledDate || !scheduledTime) {
+        toast({
+          variant: "destructive",
+          title: "Lỗi",
+          description: "Vui lòng chọn ngày và giờ để lên lịch gửi thông báo",
+        });
+        return;
+      }
+    }
+
+    // Validate recurring
+    if (formData.schedule_type === "recurring" && !cronValidation?.isValid) {
+      toast({
+        variant: "destructive",
+        title: "Lỗi",
+        description: "Vui lòng chọn lịch lặp lại hợp lệ",
+      });
+      return;
+    }
+
     setLoading(true);
 
     try {
       let scheduled_at = null;
-      if (!sendNow && scheduledDate && scheduledTime) {
+      if (
+        formData.schedule_type === "one-time" &&
+        !sendNow &&
+        scheduledDate &&
+        scheduledTime
+      ) {
         const [hours, minutes] = scheduledTime.split(":");
         const combinedDate = new Date(scheduledDate);
         combinedDate.setHours(parseInt(hours, 10));
@@ -60,24 +178,39 @@ export default function CreateOrganizerNotification() {
         title: formData.title,
         body: formData.body,
         image_url: formData.image_url || undefined,
-        scope: formData.scope,
-        target_id: formData.target_id || undefined,
+        scope: "event",
         scheduled_at,
       };
 
-      // Only add action fields if action_type is not 'none'
-      if (formData.action_type !== "none") {
-        payload.action_type = formData.action_type;
-        payload.action_value = formData.action_value;
+      // Add target_event_id if selected
+      if (formData.target_event_id && formData.target_event_id !== "none") {
+        payload.target_event_id = formData.target_event_id;
+      }
+
+      // Add recurring fields
+      if (formData.schedule_type === "recurring") {
+        payload.is_recurring = true;
+        payload.cron_pattern = formData.cron_pattern;
+        payload.timezone = formData.timezone;
+        if (formData.recurrence_end_date) {
+          payload.recurrence_end_date = new Date(
+            formData.recurrence_end_date
+          ).toISOString();
+        }
       }
 
       const notification = await organizerNotificationApi.create(payload);
 
-      if (sendNow) {
+      if (sendNow && formData.schedule_type !== "recurring") {
         await organizerNotificationApi.send(notification.notification_id);
         toast({
           title: "Thành công",
           description: "Thông báo đã được gửi",
+        });
+      } else if (formData.schedule_type === "recurring") {
+        toast({
+          title: "Thành công",
+          description: "Thông báo lặp lại đã được kích hoạt",
         });
       } else {
         toast({
@@ -160,117 +293,126 @@ export default function CreateOrganizerNotification() {
                 />
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="scope">Phạm vi *</Label>
-                  <Select
-                    value={formData.scope}
-                    onValueChange={(value: "event" | "organizer") =>
-                      setFormData({ ...formData, scope: value })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="event">Sự kiện</SelectItem>
-                      <SelectItem value="organizer">Người tổ chức</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="target_id">ID đích</Label>
-                  <Input
-                    id="target_id"
-                    value={formData.target_id}
-                    onChange={(e) =>
-                      setFormData({ ...formData, target_id: e.target.value })
-                    }
-                    placeholder="Để trống cho tất cả"
-                  />
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="target_event_id">Chọn sự kiện *</Label>
+                <Select
+                  value={formData.target_event_id}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, target_event_id: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Chọn sự kiện..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Tất cả sự kiện</SelectItem>
+                    {loadingEvents ? (
+                      <SelectItem value="loading" disabled>
+                        Đang tải...
+                      </SelectItem>
+                    ) : (
+                      events.map((event) => (
+                        <SelectItem key={event._id} value={event._id}>
+                          {event.name}
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
               </div>
 
+              {/* Schedule Type Selection */}
               <div className="space-y-4">
-                <Label>Lên lịch gửi</Label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button
-                        variant="outline"
-                        className={cn(
-                          "justify-start text-left font-normal",
-                          !scheduledDate && "text-muted-foreground"
-                        )}
-                      >
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {scheduledDate ? (
-                          format(scheduledDate, "dd/MM/yyyy")
-                        ) : (
-                          <span>Chọn ngày</span>
-                        )}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0">
-                      <Calendar
-                        mode="single"
-                        selected={scheduledDate}
-                        onSelect={setScheduledDate}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-
-                  <Input
-                    type="time"
-                    value={scheduledTime}
-                    onChange={(e) => setScheduledTime(e.target.value)}
-                    disabled={!scheduledDate}
-                    placeholder="Chọn giờ"
-                  />
-                </div>
+                <Label className="text-base font-semibold">
+                  Loại lịch gửi *
+                </Label>
+                <Select
+                  value={formData.schedule_type}
+                  onValueChange={(value: any) =>
+                    setFormData({ ...formData, schedule_type: value })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="immediate">Gửi ngay</SelectItem>
+                    <SelectItem value="one-time">Lên lịch một lần</SelectItem>
+                    <SelectItem value="recurring">Lặp lại định kỳ</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
-              <div className="space-y-4">
-                <Label>Hành động (tùy chọn)</Label>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="action_type">Loại hành động</Label>
-                    <Select
-                      value={formData.action_type}
-                      onValueChange={(value) =>
-                        setFormData({ ...formData, action_type: value })
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="none">Không có</SelectItem>
-                        <SelectItem value="url">Mở URL</SelectItem>
-                        <SelectItem value="screen">Mở màn hình</SelectItem>
-                      </SelectContent>
-                    </Select>
+              {/* One-time scheduling */}
+              {formData.schedule_type === "one-time" && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-base font-semibold">
+                      Thời gian gửi *
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Chọn ngày và giờ để lên lịch gửi
+                    </p>
                   </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          className={cn(
+                            "justify-start text-left font-normal",
+                            !scheduledDate && "text-muted-foreground"
+                          )}
+                        >
+                          <CalendarIcon className="mr-2 h-4 w-4" />
+                          {scheduledDate ? (
+                            format(scheduledDate, "dd/MM/yyyy")
+                          ) : (
+                            <span>Chọn ngày</span>
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0">
+                        <Calendar
+                          mode="single"
+                          selected={scheduledDate}
+                          onSelect={setScheduledDate}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
 
-                  <div className="space-y-2">
-                    <Label htmlFor="action_value">Giá trị hành động</Label>
                     <Input
-                      id="action_value"
-                      value={formData.action_value}
-                      onChange={(e) =>
-                        setFormData({
-                          ...formData,
-                          action_value: e.target.value,
-                        })
-                      }
-                      disabled={formData.action_type === "none"}
-                      placeholder="URL hoặc tên màn hình"
+                      type="time"
+                      value={scheduledTime}
+                      onChange={(e) => setScheduledTime(e.target.value)}
+                      disabled={!scheduledDate}
+                      placeholder="Chọn giờ"
                     />
                   </div>
                 </div>
-              </div>
+              )}
+
+              {/* Recurring scheduling */}
+              {formData.schedule_type === "recurring" && (
+                <RecurringScheduleForm
+                  cronPattern={formData.cron_pattern}
+                  timezone={formData.timezone}
+                  recurrenceEndDate={formData.recurrence_end_date}
+                  onCronPatternChange={(pattern) =>
+                    setFormData({ ...formData, cron_pattern: pattern })
+                  }
+                  onTimezoneChange={(tz) =>
+                    setFormData({ ...formData, timezone: tz })
+                  }
+                  onRecurrenceEndDateChange={(date) =>
+                    setFormData({ ...formData, recurrence_end_date: date })
+                  }
+                  commonPatterns={commonPatterns}
+                  validation={cronValidation}
+                  isValidating={isValidating}
+                />
+              )}
 
               <div className="flex gap-4 justify-end pt-4">
                 <Button
@@ -281,18 +423,30 @@ export default function CreateOrganizerNotification() {
                 >
                   Hủy
                 </Button>
-                <Button type="submit" disabled={loading}>
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {loading ? "Đang xử lý..." : "Lưu nháp"}
-                </Button>
-                <Button
-                  type="button"
-                  onClick={(e) => handleSubmit(e, true)}
-                  disabled={loading}
-                >
-                  <Send className="mr-2 h-4 w-4" />
-                  {loading ? "Đang gửi..." : "Gửi ngay"}
-                </Button>
+                {formData.schedule_type === "one-time" && (
+                  <Button type="submit" disabled={loading}>
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {loading ? "Đang lên lịch..." : "Lên lịch gửi"}
+                  </Button>
+                )}
+                {formData.schedule_type === "recurring" && (
+                  <Button type="submit" disabled={loading}>
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {loading ? "Đang kích hoạt..." : "Kích hoạt lặp lại"}
+                  </Button>
+                )}
+                {formData.schedule_type === "immediate" && (
+                  <Button
+                    type="button"
+                    onClick={(e) => handleSubmit(e, true)}
+                    disabled={loading}
+                    variant="default"
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    <Send className="mr-2 h-4 w-4" />
+                    {loading ? "Đang gửi..." : "Gửi ngay"}
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>

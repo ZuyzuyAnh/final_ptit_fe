@@ -11,6 +11,9 @@ import {
   Calendar,
   X,
   BarChart3,
+  Pause,
+  Play,
+  Repeat,
 } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
 import { useApi } from "@/hooks/use-api";
@@ -21,12 +24,20 @@ import type {
   NotificationScope,
 } from "@/types/notifications";
 import {
+  getStatusBadge as getStatusBadgeComponent,
+  getNotificationTypeBadge,
+  getRecurringStatusBadge,
+} from "@/components/common/NotificationBadges";
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { toast } from "sonner";
+import { format } from "date-fns";
+import { useNavigate } from "react-router-dom";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -37,9 +48,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { toast } from "sonner";
-import { format } from "date-fns";
-import { useNavigate } from "react-router-dom";
 
 const AdminNotifications = () => {
   const navigate = useNavigate();
@@ -62,6 +70,8 @@ const AdminNotifications = () => {
   const [deleteConfirm, setDeleteConfirm] = useState<Notification | null>(null);
   const [sendConfirm, setSendConfirm] = useState<Notification | null>(null);
   const [cancelConfirm, setCancelConfirm] = useState<Notification | null>(null);
+  const [pauseConfirm, setPauseConfirm] = useState<Notification | null>(null);
+  const [resumeConfirm, setResumeConfirm] = useState<Notification | null>(null);
 
   const loadNotifications = async () => {
     await safeRequest(async () => {
@@ -121,22 +131,37 @@ const AdminNotifications = () => {
     });
   };
 
+  const handlePause = async () => {
+    if (!pauseConfirm) return;
+    await safeRequest(async () => {
+      await notificationApi.pause(pauseConfirm.notification_id);
+      toast.success("Tạm dừng thông báo lặp lại thành công");
+      setPauseConfirm(null);
+      await loadNotifications();
+    });
+  };
+
+  const handleResume = async () => {
+    if (!resumeConfirm) return;
+    await safeRequest(async () => {
+      const result = await notificationApi.resume(
+        resumeConfirm.notification_id
+      );
+      const nextSend = result.next_send_at
+        ? format(new Date(result.next_send_at), "dd/MM/yyyy HH:mm")
+        : "";
+      toast.success(
+        `Tiếp tục thông báo thành công${
+          nextSend ? `. Lần gửi tiếp theo: ${nextSend}` : ""
+        }`
+      );
+      setResumeConfirm(null);
+      await loadNotifications();
+    });
+  };
+
   const getStatusBadge = (status: NotificationStatus) => {
-    const colors = {
-      draft: "bg-gray-100 text-gray-700",
-      scheduled: "bg-blue-100 text-blue-700",
-      sending: "bg-yellow-100 text-yellow-700",
-      sent: "bg-green-100 text-green-700",
-      failed: "bg-red-100 text-red-700",
-    };
-    const labels = {
-      draft: "Bản nháp",
-      scheduled: "Đã lên lịch",
-      sending: "Đang gửi",
-      sent: "Đã gửi",
-      failed: "Thất bại",
-    };
-    return <Badge className={colors[status]}>{labels[status]}</Badge>;
+    return getStatusBadgeComponent(status);
   };
 
   const getScopeBadge = (scope: NotificationScope) => {
@@ -194,6 +219,7 @@ const AdminNotifications = () => {
               <SelectItem value="ALL">Tất cả trạng thái</SelectItem>
               <SelectItem value="draft">Bản nháp</SelectItem>
               <SelectItem value="scheduled">Đã lên lịch</SelectItem>
+              <SelectItem value="active">Đang hoạt động</SelectItem>
               <SelectItem value="sending">Đang gửi</SelectItem>
               <SelectItem value="sent">Đã gửi</SelectItem>
               <SelectItem value="failed">Thất bại</SelectItem>
@@ -224,6 +250,7 @@ const AdminNotifications = () => {
               <thead className="border-b bg-muted/50">
                 <tr>
                   <th className="text-left p-4 font-medium">Tiêu đề</th>
+                  <th className="text-left p-4 font-medium">Loại</th>
                   <th className="text-left p-4 font-medium">Trạng thái</th>
                   <th className="text-left p-4 font-medium">Phạm vi</th>
                   <th className="text-left p-4 font-medium">Thống kê</th>
@@ -246,6 +273,12 @@ const AdminNotifications = () => {
                       </div>
                     </td>
                     <td className="p-4">
+                      <div className="space-y-1">
+                        {getNotificationTypeBadge(notification)}
+                        {getRecurringStatusBadge(notification)}
+                      </div>
+                    </td>
+                    <td className="p-4">
                       {getStatusBadge(notification.status)}
                     </td>
                     <td className="p-4">{getScopeBadge(notification.scope)}</td>
@@ -265,89 +298,142 @@ const AdminNotifications = () => {
                       </div>
                     </td>
                     <td className="p-4">
-                      <div className="text-sm space-y-1">
-                        {notification.scheduled_at && (
-                          <div className="flex items-center gap-1 text-blue-600">
-                            <Calendar className="w-3 h-3" />
-                            {format(
-                              new Date(notification.scheduled_at),
-                              "dd/MM/yyyy HH:mm"
-                            )}
-                          </div>
-                        )}
-                        <div className="text-muted-foreground">
-                          {format(
-                            new Date(notification.created_at),
-                            "dd/MM/yyyy HH:mm"
+                      <div className="space-y-1">
+                        {notification.is_recurring &&
+                          notification.next_send_at && (
+                            <div className="flex items-center gap-1 text-blue-600">
+                              <Repeat className="w-3 h-3" />
+                              Tiếp theo:{" "}
+                              {format(
+                                new Date(notification.next_send_at),
+                                "dd/MM/yyyy HH:mm"
+                              )}
+                            </div>
                           )}
-                        </div>
+                        {notification.is_recurring &&
+                          notification.last_sent_at && (
+                            <div className="text-muted-foreground">
+                              Gần nhất:{" "}
+                              {format(
+                                new Date(notification.last_sent_at),
+                                "dd/MM/yyyy HH:mm"
+                              )}
+                            </div>
+                          )}
+                        {notification.is_recurring &&
+                          notification.total_executions !== undefined && (
+                            <div className="text-muted-foreground">
+                              Đã gửi: {notification.total_executions} lần
+                            </div>
+                          )}
+                        {!notification.is_recurring &&
+                          notification.scheduled_at && (
+                            <div className="flex items-center gap-1 text-blue-600">
+                              <Calendar className="w-3 h-3" />
+                              {format(
+                                new Date(notification.scheduled_at),
+                                "dd/MM/yyyy HH:mm"
+                              )}
+                            </div>
+                          )}
                       </div>
                     </td>
                     <td className="p-4">
-                      <div className="flex items-center justify-end gap-2">
-                        {notification.status === "sent" && (
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              navigate(
-                                `/admin/notifications/${notification.notification_id}/stats`
-                              )
-                            }
-                          >
-                            <BarChart3 className="w-4 h-4" />
-                          </Button>
-                        )}
-                        {notification.status === "draft" && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                navigate(
-                                  `/admin/notifications/${notification.notification_id}/edit`
-                                )
-                              }
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={() => setSendConfirm(notification)}
-                            >
-                              <Send className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => setDeleteConfirm(notification)}
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </Button>
-                          </>
-                        )}
-                        {notification.status === "scheduled" && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() =>
-                                navigate(
-                                  `/admin/notifications/${notification.notification_id}/edit`
-                                )
-                              }
-                            >
-                              <Edit className="w-4 h-4" />
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="destructive"
-                              onClick={() => setCancelConfirm(notification)}
-                            >
-                              <X className="w-4 h-4" />
-                            </Button>
-                          </>
-                        )}
+                      <div className="flex gap-2">
+                        {/* Recurring: Active */}
+                        {notification.is_recurring &&
+                          notification.status === "active" && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setPauseConfirm(notification)}
+                              >
+                                <Pause className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => setDeleteConfirm(notification)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </>
+                          )}
+                        {/* Recurring: Paused (draft) */}
+                        {notification.is_recurring &&
+                          notification.status === "draft" && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setResumeConfirm(notification)}
+                              >
+                                <Play className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => setDeleteConfirm(notification)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </>
+                          )}
+                        {/* One-time: Draft */}
+                        {!notification.is_recurring &&
+                          notification.status === "draft" && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  navigate(
+                                    `/admin/notifications/${notification.notification_id}/edit`
+                                  )
+                                }
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                onClick={() => setSendConfirm(notification)}
+                              >
+                                <Send className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => setDeleteConfirm(notification)}
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </Button>
+                            </>
+                          )}
+                        {/* One-time: Scheduled */}
+                        {!notification.is_recurring &&
+                          notification.status === "scheduled" && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  navigate(
+                                    `/admin/notifications/${notification.notification_id}/edit`
+                                  )
+                                }
+                              >
+                                <Edit className="w-4 h-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => setCancelConfirm(notification)}
+                              >
+                                <X className="w-4 h-4" />
+                              </Button>
+                            </>
+                          )}
                       </div>
                     </td>
                   </tr>
@@ -443,6 +529,50 @@ const AdminNotifications = () => {
             <AlertDialogCancel>Đóng</AlertDialogCancel>
             <AlertDialogAction onClick={handleCancel}>
               Hủy lịch
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Pause Recurring Confirmation */}
+      <AlertDialog
+        open={!!pauseConfirm}
+        onOpenChange={(open) => !open && setPauseConfirm(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Tạm dừng thông báo lặp lại</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bạn có chắc muốn tạm dừng thông báo "{pauseConfirm?.title}"? Thông
+              báo sẽ ngừng gửi cho đến khi bạn tiếp tục lại.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction onClick={handlePause}>
+              Tạm dừng
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Resume Recurring Confirmation */}
+      <AlertDialog
+        open={!!resumeConfirm}
+        onOpenChange={(open) => !open && setResumeConfirm(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Tiếp tục thông báo lặp lại</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bạn có chắc muốn tiếp tục thông báo "{resumeConfirm?.title}"?
+              Thông báo sẽ được gửi theo lịch đã thiết lập.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Hủy</AlertDialogCancel>
+            <AlertDialogAction onClick={handleResume}>
+              Tiếp tục
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

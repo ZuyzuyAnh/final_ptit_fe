@@ -9,19 +9,45 @@ import type {
   NotificationQueryParams,
   RescheduleRequest,
   SendResponse,
+  CronValidationRequest,
+  CronValidationResponse,
+  CommonCronPattern,
 } from "@/types/notifications";
 
 // Helper to unwrap API responses (reuse from rbacApi)
 function unwrap<T>(response: any): T {
-  const data = response?.data ?? response;
+  // Transform _id to notification_id for single notification objects
+  const transformNotification = (item: any) => {
+    if (item && item._id && !item.notification_id) {
+      return { ...item, notification_id: item._id };
+    }
+    return item;
+  };
 
-  // Handle paginated responses
+  // Handle new response structure: { success, data: [], pagination: {} }
+  if (response?.pagination) {
+    const itemsArray = response.data || [];
+
+    if (itemsArray && Array.isArray(itemsArray)) {
+      return {
+        items: itemsArray.map(transformNotification),
+        total: response.pagination.total,
+        page: response.pagination.page,
+        limit: response.pagination.limit,
+        total_pages:
+          response.pagination.totalPages || response.pagination.total_pages,
+      } as T;
+    }
+  }
+
+  // Handle nested data response: { data: { data: [], pagination: {} } }
+  const data = response?.data ?? response;
   if (data?.pagination) {
     const itemsArray = data.data || data.notifications || [];
 
     if (itemsArray && Array.isArray(itemsArray)) {
       return {
-        items: itemsArray,
+        items: itemsArray.map(transformNotification),
         total: data.pagination.total,
         page: data.pagination.page,
         limit: data.pagination.limit,
@@ -30,7 +56,8 @@ function unwrap<T>(response: any): T {
     }
   }
 
-  return data;
+  // Transform single notification object
+  return transformNotification(data);
 }
 
 export const notificationApi = {
@@ -109,6 +136,41 @@ export const notificationApi = {
     const response = await api.post<ApiResponse<Notification>>(
       `/admin/notifications/${id}/reschedule`,
       data
+    );
+    return unwrap(response);
+  },
+
+  // Validate cron pattern
+  async validateCron(
+    data: CronValidationRequest
+  ): Promise<CronValidationResponse> {
+    const response = await api.post<ApiResponse<CronValidationResponse>>(
+      "/admin/notifications/cron/validate",
+      data
+    );
+    return unwrap(response);
+  },
+
+  // Get common cron patterns
+  async getCommonPatterns(): Promise<CommonCronPattern[]> {
+    const response = await api.get<ApiResponse<CommonCronPattern[]>>(
+      "/admin/notifications/cron/patterns"
+    );
+    return unwrap(response);
+  },
+
+  // Pause recurring notification
+  async pause(id: string): Promise<Notification> {
+    const response = await api.post<ApiResponse<Notification>>(
+      `/admin/notifications/${id}/pause`
+    );
+    return unwrap(response);
+  },
+
+  // Resume recurring notification
+  async resume(id: string): Promise<Notification> {
+    const response = await api.post<ApiResponse<Notification>>(
+      `/admin/notifications/${id}/resume`
     );
     return unwrap(response);
   },

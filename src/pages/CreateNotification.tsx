@@ -4,11 +4,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useApi } from "@/hooks/use-api";
 import { notificationApi } from "@/lib/notificationApi";
-import type { NotificationScope, ActionType } from "@/types/notifications";
+import type {
+  NotificationScope,
+  ActionType,
+  CommonCronPattern,
+  CronValidationResponse,
+} from "@/types/notifications";
 import {
   Select,
   SelectContent,
@@ -17,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import { RecurringScheduleForm } from "@/components/common/RecurringScheduleForm";
 
 const CreateNotification = () => {
   const navigate = useNavigate();
@@ -32,10 +38,76 @@ const CreateNotification = () => {
     action_type: "" as ActionType,
     action_data: {},
     scheduled_at: "",
+    // Recurring fields
+    schedule_type: "immediate" as "immediate" | "one-time" | "recurring",
+    is_recurring: false,
+    cron_pattern: "",
+    timezone: "Asia/Ho_Chi_Minh",
+    recurrence_end_date: "",
   });
+
+  const [commonPatterns, setCommonPatterns] = useState<CommonCronPattern[]>([]);
+  const [cronValidation, setCronValidation] =
+    useState<CronValidationResponse | null>(null);
+  const [isValidating, setIsValidating] = useState(false);
+
+  // Load common cron patterns
+  useEffect(() => {
+    const loadPatterns = async () => {
+      try {
+        const patterns = await notificationApi.getCommonPatterns();
+        setCommonPatterns(patterns);
+      } catch (error) {
+        console.error("Failed to load cron patterns:", error);
+      }
+    };
+    void loadPatterns();
+  }, []);
+
+  // Validate cron pattern with debounce
+  useEffect(() => {
+    if (
+      formData.schedule_type === "recurring" &&
+      formData.cron_pattern &&
+      formData.timezone
+    ) {
+      const timer = setTimeout(async () => {
+        setIsValidating(true);
+        try {
+          const validation = await notificationApi.validateCron({
+            cron_pattern: formData.cron_pattern,
+            timezone: formData.timezone,
+          });
+          setCronValidation(validation);
+        } catch (error) {
+          console.error("Cron validation error:", error);
+          setCronValidation({
+            isValid: false,
+            error: "Không thể kiểm tra cron pattern",
+            description: null,
+            nextExecutions: [],
+          });
+        } finally {
+          setIsValidating(false);
+        }
+      }, 500);
+
+      return () => clearTimeout(timer);
+    } else {
+      setCronValidation(null);
+    }
+  }, [formData.cron_pattern, formData.timezone, formData.schedule_type]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // Validation for recurring
+    if (formData.schedule_type === "recurring") {
+      if (!cronValidation?.isValid) {
+        toast.error("Vui lòng chọn lịch lặp lại hợp lệ");
+        return;
+      }
+    }
 
     await safeRequest(async () => {
       const payload: any = {
@@ -55,8 +127,19 @@ const CreateNotification = () => {
         payload.action_type = formData.action_type;
         payload.action_data = formData.action_data;
       }
-      if (formData.scheduled_at) {
+
+      // Handle scheduling
+      if (formData.schedule_type === "one-time" && formData.scheduled_at) {
         payload.scheduled_at = new Date(formData.scheduled_at).toISOString();
+      } else if (formData.schedule_type === "recurring") {
+        payload.is_recurring = true;
+        payload.cron_pattern = formData.cron_pattern;
+        payload.timezone = formData.timezone;
+        if (formData.recurrence_end_date) {
+          payload.recurrence_end_date = new Date(
+            formData.recurrence_end_date
+          ).toISOString();
+        }
       }
 
       await notificationApi.create(payload);
@@ -194,7 +277,8 @@ const CreateNotification = () => {
                 onValueChange={(value) =>
                   setFormData({
                     ...formData,
-                    action_type: value === "none" ? "" : (value as ActionType),
+                    action_type:
+                      value === "none" ? ("" as any) : (value as ActionType),
                   })
                 }
               >
@@ -211,19 +295,61 @@ const CreateNotification = () => {
             </div>
 
             <div>
-              <Label htmlFor="scheduled_at">Lên lịch gửi (tùy chọn)</Label>
-              <Input
-                id="scheduled_at"
-                type="datetime-local"
-                value={formData.scheduled_at}
-                onChange={(e) =>
-                  setFormData({ ...formData, scheduled_at: e.target.value })
+              <Label>Loại lịch gửi *</Label>
+              <Select
+                value={formData.schedule_type}
+                onValueChange={(value: any) =>
+                  setFormData({ ...formData, schedule_type: value })
                 }
-              />
-              <p className="text-xs text-muted-foreground mt-1">
-                Để trống để tạo bản nháp, hoặc chọn thời gian để tự động gửi
-              </p>
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="immediate">Gửi ngay</SelectItem>
+                  <SelectItem value="one-time">Lên lịch một lần</SelectItem>
+                  <SelectItem value="recurring">Lặp lại định kỳ</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+
+            {formData.schedule_type === "one-time" && (
+              <div>
+                <Label htmlFor="scheduled_at">Thời gian gửi *</Label>
+                <Input
+                  id="scheduled_at"
+                  type="datetime-local"
+                  value={formData.scheduled_at}
+                  onChange={(e) =>
+                    setFormData({ ...formData, scheduled_at: e.target.value })
+                  }
+                  required
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Chọn thời gian để tự động gửi
+                </p>
+              </div>
+            )}
+
+            {formData.schedule_type === "recurring" && (
+              <RecurringScheduleForm
+                cronPattern={formData.cron_pattern}
+                timezone={formData.timezone}
+                recurrenceEndDate={formData.recurrence_end_date}
+                onCronPatternChange={(pattern) =>
+                  setFormData({ ...formData, cron_pattern: pattern })
+                }
+                onTimezoneChange={(tz) =>
+                  setFormData({ ...formData, timezone: tz })
+                }
+                onRecurrenceEndDateChange={(date) =>
+                  setFormData({ ...formData, recurrence_end_date: date })
+                }
+                commonPatterns={commonPatterns}
+                validation={cronValidation}
+                isValidating={isValidating}
+              />
+            )}
           </div>
 
           <div className="flex gap-4">

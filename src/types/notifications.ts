@@ -5,7 +5,8 @@ export type NotificationStatus =
   | "scheduled"
   | "sending"
   | "sent"
-  | "failed";
+  | "failed"
+  | "active";
 export type NotificationScope = "all" | "event" | "organizer";
 export type DeviceType = "ios" | "android" | "web";
 export type RecipientStatus =
@@ -43,6 +44,14 @@ export interface Notification {
     user_id: string;
     username: string;
   };
+  // Recurring notification fields
+  is_recurring?: boolean;
+  cron_pattern?: string;
+  timezone?: string;
+  last_sent_at?: string;
+  next_send_at?: string;
+  recurrence_end_date?: string;
+  total_executions?: number;
 }
 
 export interface NotificationStats {
@@ -54,6 +63,9 @@ export interface NotificationStats {
   total_failed: number;
   total_opened: number;
   delivery_rate: number;
+  successfully_sent: number;
+  opened: number;
+  failed: number;
   open_rate: number;
   status: NotificationStatus;
   sent_at?: string;
@@ -61,6 +73,11 @@ export interface NotificationStats {
 
 export interface CreateNotificationRequest {
   title: string;
+  // Recurring fields
+  is_recurring?: boolean;
+  cron_pattern?: string;
+  timezone?: string;
+  recurrence_end_date?: string;
   body: string;
   image_url?: string;
   scope: NotificationScope;
@@ -84,15 +101,38 @@ export interface UpdateNotificationRequest {
 
 export interface NotificationQueryParams {
   page?: number;
-  limit?: number;
-  status?: NotificationStatus;
-  scope?: NotificationScope;
-  from_date?: string;
-  to_date?: string;
+  is_recurring?: boolean;
 }
 
 export interface RescheduleRequest {
   scheduled_at: string;
+}
+
+export interface SendResponse {
+  total_recipients: number;
+  total_sent: number;
+  total_failed: number;
+}
+
+// Recurring notification types
+export interface CronValidationRequest {
+  cron_pattern: string;
+  timezone: string;
+}
+
+export interface CronValidationResponse {
+  isValid: boolean;
+  error: string | null;
+  description: string | null;
+  nextExecutions: string[];
+  pattern?: string;
+  timezone?: string;
+}
+
+export interface CommonCronPattern {
+  pattern: string;
+  description: string;
+  category: string;
 }
 
 export interface SendResponse {

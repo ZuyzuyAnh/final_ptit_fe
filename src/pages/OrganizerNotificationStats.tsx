@@ -15,7 +15,7 @@ import {
 import { organizerNotificationApi } from "@/lib/organizerNotificationApi";
 import { useToast } from "@/hooks/use-toast";
 import { NotificationStats } from "@/types/notifications";
-import DashboardLayout from "@/components/layout/DashboardLayout";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
 
 export default function OrganizerNotificationStats() {
   const { id } = useParams<{ id: string }>();

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { useApi } from "@/hooks/use-api";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
@@ -20,21 +22,26 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import { format } from "date-fns";
-import { CalendarIcon, ArrowLeft, Save } from "lucide-react";
+import { CalendarIcon, ArrowLeft, Save, Send } from "lucide-react";
 import { organizerNotificationApi } from "@/lib/organizerNotificationApi";
 import { useToast } from "@/hooks/use-toast";
 import { Notification } from "@/types/notifications";
-import DashboardLayout from "@/components/layout/DashboardLayout";
+import { DashboardLayout } from "@/components/layout/DashboardLayout";
 
 export default function EditOrganizerNotification() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { api, safeRequest } = useApi();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [notification, setNotification] = useState<Notification | null>(null);
   const [scheduledDate, setScheduledDate] = useState<Date>();
   const [scheduledTime, setScheduledTime] = useState("");
+  const [events, setEvents] = useState<Array<{ _id: string; name: string }>>(
+    []
+  );
+  const [loadingEvents, setLoadingEvents] = useState(false);
 
   const [formData, setFormData] = useState({
     title: "",
@@ -52,6 +59,30 @@ export default function EditOrganizerNotification() {
     }
   }, [id]);
 
+  useEffect(() => {
+    if (formData.scope === "event") {
+      loadEvents();
+    }
+  }, [formData.scope]);
+
+  const loadEvents = async () => {
+    setLoadingEvents(true);
+    try {
+      const response = await safeRequest(() =>
+        api.get("/organizer/events/my-events")
+      );
+      if (response) {
+        const data = (response as any)?.data || response;
+        const eventsData = Array.isArray(data) ? data : [];
+        setEvents(eventsData);
+      }
+    } catch (error) {
+      console.error("Error fetching events:", error);
+    } finally {
+      setLoadingEvents(false);
+    }
+  };
+
   const loadNotification = async () => {
     try {
       const data = await organizerNotificationApi.getById(id!);
@@ -61,10 +92,12 @@ export default function EditOrganizerNotification() {
         title: data.title,
         body: data.body,
         image_url: data.image_url || "",
-        scope: data.scope,
-        target_id: data.target_id || "",
-        action_type: data.action_type || "none",
-        action_value: data.action_value || "",
+        scope: (data.scope === "all" ? "event" : data.scope) as
+          | "event"
+          | "organizer",
+        target_id: (data as any).target_id || "",
+        action_type: (data as any).action_type || "none",
+        action_value: (data as any).action_value || "",
       });
 
       if (data.scheduled_at) {
@@ -103,7 +136,10 @@ export default function EditOrganizerNotification() {
         body: formData.body,
         image_url: formData.image_url || undefined,
         scope: formData.scope,
-        target_id: formData.target_id || undefined,
+        target_id:
+          formData.target_id && formData.target_id !== "none"
+            ? formData.target_id
+            : undefined,
       };
 
       // Only add action fields if action_type is not 'none'
@@ -133,6 +169,27 @@ export default function EditOrganizerNotification() {
         variant: "destructive",
         title: "Lỗi",
         description: error.message || "Không thể cập nhật thông báo",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleSendNow = async () => {
+    if (!id) return;
+    setSaving(true);
+    try {
+      await organizerNotificationApi.send(id);
+      toast({
+        title: "Thành công",
+        description: "Thông báo đã được gửi",
+      });
+      navigate("/notifications");
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Lỗi",
+        description: error.message || "Không thể gửi thông báo",
       });
     } finally {
       setSaving(false);
@@ -218,9 +275,9 @@ export default function EditOrganizerNotification() {
                   <Label htmlFor="scope">Phạm vi *</Label>
                   <Select
                     value={formData.scope}
-                    onValueChange={(value: "event" | "organizer") =>
-                      setFormData({ ...formData, scope: value })
-                    }
+                    onValueChange={(value: "event" | "organizer") => {
+                      setFormData({ ...formData, scope: value, target_id: "" });
+                    }}
                   >
                     <SelectTrigger>
                       <SelectValue />
@@ -232,22 +289,62 @@ export default function EditOrganizerNotification() {
                   </Select>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="target_id">ID đích</Label>
-                  <Input
-                    id="target_id"
-                    value={formData.target_id}
-                    onChange={(e) =>
-                      setFormData({ ...formData, target_id: e.target.value })
-                    }
-                    placeholder="Để trống cho tất cả"
-                  />
-                </div>
+                {formData.scope === "event" && (
+                  <div className="space-y-2">
+                    <Label htmlFor="target_id">Chọn sự kiện</Label>
+                    <Select
+                      value={formData.target_id || "none"}
+                      onValueChange={(value) =>
+                        setFormData({ ...formData, target_id: value })
+                      }
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Chọn sự kiện..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Tất cả sự kiện</SelectItem>
+                        {loadingEvents ? (
+                          <SelectItem value="loading" disabled>
+                            Đang tải...
+                          </SelectItem>
+                        ) : (
+                          events.map((event) => (
+                            <SelectItem key={event._id} value={event._id}>
+                              {event.name}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {formData.scope === "organizer" && (
+                  <div className="space-y-2">
+                    <Label className="text-muted-foreground">
+                      Gửi đến tất cả người tổ chức
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Thông báo sẽ được gửi đến tất cả người tổ chức trong hệ
+                      thống
+                    </p>
+                  </div>
+                )}
               </div>
 
-              {notification.status === "scheduled" && (
+              {(notification.status === "scheduled" ||
+                notification.status === "draft") && (
                 <div className="space-y-4">
-                  <Label>Lên lịch gửi</Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-base font-semibold">
+                      Thời gian gửi
+                    </Label>
+                    {notification.status === "scheduled" && (
+                      <Badge className="bg-blue-100 text-blue-700">
+                        Lịch hiện tại
+                      </Badge>
+                    )}
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <Popover>
                       <PopoverTrigger asChild>
@@ -340,6 +437,19 @@ export default function EditOrganizerNotification() {
                   <Save className="mr-2 h-4 w-4" />
                   {saving ? "Đang lưu..." : "Lưu thay đổi"}
                 </Button>
+                {(notification.status === "draft" ||
+                  notification.status === "scheduled") && (
+                  <Button
+                    type="button"
+                    onClick={handleSendNow}
+                    disabled={saving}
+                    variant="default"
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    <Send className="mr-2 h-4 w-4" />
+                    {saving ? "Đang gửi..." : "Gửi ngay"}
+                  </Button>
+                )}
               </div>
             </CardContent>
           </Card>

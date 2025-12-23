@@ -14,7 +14,6 @@ export const Navigation = () => {
 
   const navItems = [
     { label: "Trang chủ", path: "/dashboard", icon: Home },
-    { label: "Thông báo", path: "/notifications", icon: Bell },
     { label: "Tạo hội nghị mới", path: "/create-conference", icon: Plus },
   ];
 
@@ -51,6 +50,12 @@ export const Navigation = () => {
                   isActive={location.pathname === item.path}
                 />
               ))}
+              <NavButton
+                label="Thông báo"
+                path="/notifications"
+                icon={Bell}
+                isActive={location.pathname === "/notifications"}
+              />
               <Button
                 variant="ghost"
                 onClick={handleLogout}
@@ -64,18 +69,6 @@ export const Navigation = () => {
 
           {/* Right Section */}
           <div className="flex items-center gap-4">
-            <Button
-              variant="secondary"
-              size="icon"
-              className="relative flex w-fit px-4"
-            >
-              <Bell className="w-5 h-5" />
-              <p className="font-medium font-heading transition-colors text-base">
-                Thông báo
-              </p>
-              <span className="absolute top-1 right-1 w-2 h-2 bg-destructive rounded-full"></span>
-            </Button>
-
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center">
                 <span className="text-primary-foreground text-sm font-medium">
