@@ -81,7 +81,7 @@ const Login = () => {
   // Handle field blur
   const handleBlur = (field: "email" | "password") => {
     setTouched({ ...touched, [field]: true });
-    
+
     if (field === "email") {
       setErrors({ ...errors, email: validateEmail(formData.email) });
     } else if (field === "password") {
@@ -92,7 +92,7 @@ const Login = () => {
   // Handle field change
   const handleChange = (field: "email" | "password", value: string) => {
     setFormData({ ...formData, [field]: value });
-    
+
     // Clear error when user starts typing
     if (touched[field]) {
       if (field === "email") {
@@ -128,54 +128,59 @@ const Login = () => {
     let loginSuccess = false;
 
     try {
-      const adminLoginResult = await api.post<LoginResponse>("/admin/auth/login", {
-        email: formData.email,
-        password: formData.password,
-      });
-    });
+      const adminLoginResult = await api.post<LoginResponse>(
+        "/admin/auth/login",
+        {
+          email: formData.email,
+          password: formData.password,
+        }
+      );
 
-    if (loginResult && loginResult.data?.access_token) {
-      const token = loginResult.data.access_token;
-      const userType = loginResult.data.user_type || "system_user"; // Default to system_user for admin endpoint
+      if (adminLoginResult && adminLoginResult.data?.access_token) {
+        const token = adminLoginResult.data.access_token;
+        const userType = adminLoginResult.data.user_type || "system_user"; // Default to system_user for admin endpoint
 
-      if (token && typeof token === "string" && token.trim() !== "") {
-        localStorage.setItem("auth_token", token);
-        // Map user_type from backend to frontend type
-        const frontendUserType =
-          userType === "system_user" ? "admin" : "organizer";
-        localStorage.setItem("user_type", frontendUserType);
+        if (token && typeof token === "string" && token.trim() !== "") {
+          localStorage.setItem("auth_token", token);
+          // Map user_type from backend to frontend type
+          const frontendUserType =
+            userType === "system_user" ? "admin" : "organizer";
+          localStorage.setItem("user_type", frontendUserType);
 
-        // Fetch user profile
-        const profileResponse = await safeRequest<{
-          status: number;
-          success: boolean;
-          message: string;
-          data: UserProfile;
-        }>(async () => {
-          return await api.get<{
+          // Fetch user profile
+          const profileResponse = await safeRequest<{
             status: number;
             success: boolean;
             message: string;
             data: UserProfile;
-          }>("/admin/auth/me");
-        });
+          }>(async () => {
+            return await api.get<{
+              status: number;
+              success: boolean;
+              message: string;
+              data: UserProfile;
+            }>("/admin/auth/me");
+          });
 
-        if (profileResponse) {
-          const profile: UserProfile =
-            (profileResponse as any)?.data || profileResponse;
-          login(token, profile, frontendUserType as "admin" | "organizer");
+          if (profileResponse) {
+            const profile: UserProfile =
+              (profileResponse as any)?.data || profileResponse;
+            login(token, profile, frontendUserType as "admin" | "organizer");
 
-          // Redirect based on user type
-          if (frontendUserType === "admin") {
-            navigate("/admin");
-          } else {
-            navigate("/dashboard");
+            // Redirect based on user type
+            if (frontendUserType === "admin") {
+              navigate("/admin");
+            } else {
+              navigate("/dashboard");
+            }
+            return;
           }
-          return;
+        } else {
+          console.error("Invalid token received from login");
         }
-      } else {
-        console.error("Invalid token received from login");
       }
+    } catch (error) {
+      console.error("Admin login failed:", error);
     }
 
     // If admin login failed, try organizer login (fallback for backward compatibility)

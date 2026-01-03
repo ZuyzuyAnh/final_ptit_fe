@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -25,6 +25,7 @@ import { CalendarIcon, ArrowLeft, Send } from "lucide-react";
 import { organizerNotificationApi } from "@/lib/organizerNotificationApi";
 import { useToast } from "@/hooks/use-toast";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { ConferenceLayout } from "@/components/layout/ConferenceLayout";
 import { RecurringScheduleForm } from "@/components/common/RecurringScheduleForm";
 import type {
   CommonCronPattern,
@@ -35,6 +36,7 @@ export default function CreateOrganizerNotification() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { api, safeRequest } = useApi();
+  const { id: eventId } = useParams<{ id?: string }>();
   const [loading, setLoading] = useState(false);
   const [scheduledDate, setScheduledDate] = useState<Date>();
   const [scheduledTime, setScheduledTime] = useState("");
@@ -53,7 +55,7 @@ export default function CreateOrganizerNotification() {
     title: "",
     body: "",
     image_url: "",
-    target_event_id: "",
+    target_event_id: eventId || "", // Auto-fill with current event if present
     // Schedule type
     schedule_type: "immediate" as "immediate" | "one-time" | "recurring",
     // Recurring fields
@@ -61,6 +63,13 @@ export default function CreateOrganizerNotification() {
     timezone: "Asia/Ho_Chi_Minh",
     recurrence_end_date: "",
   });
+
+  // Update target_event_id when eventId changes
+  useEffect(() => {
+    if (eventId) {
+      setFormData((prev) => ({ ...prev, target_event_id: eventId }));
+    }
+  }, [eventId]);
 
   // Fetch organizer's events
   useEffect(() => {
@@ -221,7 +230,7 @@ export default function CreateOrganizerNotification() {
         });
       }
 
-      navigate("/notifications");
+      navigate(backUrl);
     } catch (error: any) {
       toast({
         variant: "destructive",
@@ -233,15 +242,16 @@ export default function CreateOrganizerNotification() {
     }
   };
 
+  const Layout = eventId ? ConferenceLayout : DashboardLayout;
+  const backUrl = eventId
+    ? `/conference/${eventId}/notifications`
+    : "/notifications";
+
   return (
-    <DashboardLayout>
+    <Layout>
       <div className="container mx-auto p-6 max-w-4xl">
         <div className="flex items-center gap-4 mb-6">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate("/notifications")}
-          >
+          <Button variant="ghost" size="icon" onClick={() => navigate(backUrl)}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <h1 className="text-3xl font-bold">Tạo thông báo mới</h1>
@@ -293,33 +303,36 @@ export default function CreateOrganizerNotification() {
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="target_event_id">Chọn sự kiện *</Label>
-                <Select
-                  value={formData.target_event_id}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, target_event_id: value })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Chọn sự kiện..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Tất cả sự kiện</SelectItem>
-                    {loadingEvents ? (
-                      <SelectItem value="loading" disabled>
-                        Đang tải...
-                      </SelectItem>
-                    ) : (
-                      events.map((event) => (
-                        <SelectItem key={event._id} value={event._id}>
-                          {event.name}
+              {/* Only show event selector if not in event context */}
+              {!eventId && (
+                <div className="space-y-2">
+                  <Label htmlFor="target_event_id">Chọn sự kiện *</Label>
+                  <Select
+                    value={formData.target_event_id}
+                    onValueChange={(value) =>
+                      setFormData({ ...formData, target_event_id: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Chọn sự kiện..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Tất cả sự kiện</SelectItem>
+                      {loadingEvents ? (
+                        <SelectItem value="loading" disabled>
+                          Đang tải...
                         </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
+                      ) : (
+                        events.map((event) => (
+                          <SelectItem key={event._id} value={event._id}>
+                            {event.name}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
               {/* Schedule Type Selection */}
               <div className="space-y-4">
@@ -452,6 +465,6 @@ export default function CreateOrganizerNotification() {
           </Card>
         </form>
       </div>
-    </DashboardLayout>
+    </Layout>
   );
 }

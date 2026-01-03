@@ -1,4 +1,5 @@
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { ConferenceLayout } from "@/components/layout/ConferenceLayout";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -39,10 +40,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { format } from "date-fns";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 
 const OrganizerNotifications = () => {
   const navigate = useNavigate();
+  const { id: eventId } = useParams<{ id?: string }>();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const { safeRequest } = useApi();
 
@@ -64,6 +66,7 @@ const OrganizerNotifications = () => {
     await safeRequest(async () => {
       const params: any = { page, limit };
       if (statusFilter !== "ALL") params.status = statusFilter;
+      if (eventId) params.target_event_id = eventId; // Filter by event
 
       const response = await organizerNotificationApi.list(params);
       setNotifications(response.items || []);
@@ -73,7 +76,7 @@ const OrganizerNotifications = () => {
 
   useEffect(() => {
     void loadNotifications();
-  }, [page, statusFilter]);
+  }, [page, statusFilter, eventId]);
 
   const filteredNotifications = useMemo(() => {
     if (!searchTerm) return notifications;
@@ -151,18 +154,30 @@ const OrganizerNotifications = () => {
     return <Badge className={colors[scope]}>{labels[scope]}</Badge>;
   };
 
+  const Layout = eventId ? ConferenceLayout : DashboardLayout;
+
   return (
-    <DashboardLayout>
+    <Layout>
       <div className="space-y-6 px-6">
         {/* Header */}
         <div className="flex gap-4 items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold">Quản lý thông báo</h1>
             <p className="text-muted-foreground mt-1">
-              Tạo và gửi thông báo đẩy đến người tham dự sự kiện
+              {eventId
+                ? "Tạo và gửi thông báo đẩy đến người tham dự sự kiện này"
+                : "Tạo và gửi thông báo đẩy đến người tham dự sự kiện"}
             </p>
           </div>
-          <Button onClick={() => navigate("/notifications/create")}>
+          <Button
+            onClick={() =>
+              navigate(
+                eventId
+                  ? `/conference/${eventId}/notifications/create`
+                  : "/notifications/create"
+              )
+            }
+          >
             <Plus className="w-4 h-4 mr-2" />
             Tạo thông báo
           </Button>
@@ -273,7 +288,9 @@ const OrganizerNotifications = () => {
                             variant="outline"
                             onClick={() =>
                               navigate(
-                                `/notifications/${notification.notification_id}/stats`
+                                eventId
+                                  ? `/conference/${eventId}/notifications/${notification.notification_id}/stats`
+                                  : `/notifications/${notification.notification_id}/stats`
                               )
                             }
                           >
@@ -287,7 +304,9 @@ const OrganizerNotifications = () => {
                               variant="outline"
                               onClick={() =>
                                 navigate(
-                                  `/notifications/${notification.notification_id}/edit`
+                                  eventId
+                                    ? `/conference/${eventId}/notifications/${notification.notification_id}/edit`
+                                    : `/notifications/${notification.notification_id}/edit`
                                 )
                               }
                             >
@@ -315,7 +334,9 @@ const OrganizerNotifications = () => {
                               variant="outline"
                               onClick={() =>
                                 navigate(
-                                  `/notifications/${notification.notification_id}/edit`
+                                  eventId
+                                    ? `/conference/${eventId}/notifications/${notification.notification_id}/edit`
+                                    : `/notifications/${notification.notification_id}/edit`
                                 )
                               }
                             >
@@ -429,7 +450,7 @@ const OrganizerNotifications = () => {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </DashboardLayout>
+    </Layout>
   );
 };
 

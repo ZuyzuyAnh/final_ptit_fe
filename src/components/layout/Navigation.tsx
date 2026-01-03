@@ -50,12 +50,6 @@ export const Navigation = () => {
                   isActive={location.pathname === item.path}
                 />
               ))}
-              <NavButton
-                label="Thông báo"
-                path="/notifications"
-                icon={Bell}
-                isActive={location.pathname === "/notifications"}
-              />
               <Button
                 variant="ghost"
                 onClick={handleLogout}

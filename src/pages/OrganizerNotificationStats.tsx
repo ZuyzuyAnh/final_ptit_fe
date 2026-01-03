@@ -16,23 +16,28 @@ import { organizerNotificationApi } from "@/lib/organizerNotificationApi";
 import { useToast } from "@/hooks/use-toast";
 import { NotificationStats } from "@/types/notifications";
 import { DashboardLayout } from "@/components/layout/DashboardLayout";
+import { ConferenceLayout } from "@/components/layout/ConferenceLayout";
 
 export default function OrganizerNotificationStats() {
-  const { id } = useParams<{ id: string }>();
+  const { id: eventId, notificationId } = useParams<{
+    id?: string;
+    notificationId?: string;
+  }>();
+  const notifId = notificationId || eventId; // Support both routes
   const navigate = useNavigate();
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<NotificationStats | null>(null);
 
   useEffect(() => {
-    if (id) {
+    if (notifId) {
       loadStats();
     }
-  }, [id]);
+  }, [notifId]);
 
   const loadStats = async () => {
     try {
-      const data = await organizerNotificationApi.getStats(id!);
+      const data = await organizerNotificationApi.getStats(notifId!);
       setStats(data);
     } catch (error: any) {
       toast({
@@ -40,19 +45,27 @@ export default function OrganizerNotificationStats() {
         title: "Lỗi",
         description: error.message || "Không thể tải thống kê",
       });
-      navigate("/notifications");
+      const backUrl = eventId
+        ? `/conference/${eventId}/notifications`
+        : "/notifications";
+      navigate(backUrl);
     } finally {
       setLoading(false);
     }
   };
 
+  const Layout = eventId ? ConferenceLayout : DashboardLayout;
+  const backUrl = eventId
+    ? `/conference/${eventId}/notifications`
+    : "/notifications";
+
   if (loading) {
     return (
-      <DashboardLayout>
+      <Layout>
         <div className="flex items-center justify-center h-96">
           <div className="text-center">Đang tải...</div>
         </div>
-      </DashboardLayout>
+      </Layout>
     );
   }
 
@@ -71,19 +84,15 @@ export default function OrganizerNotificationStats() {
       : "0.0";
 
   return (
-    <DashboardLayout>
+    <Layout>
       <div className="container mx-auto p-6 max-w-6xl">
         <div className="flex items-center gap-4 mb-6">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => navigate("/notifications")}
-          >
+          <Button variant="ghost" size="icon" onClick={() => navigate(backUrl)}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
             <h1 className="text-3xl font-bold">Thống kê thông báo</h1>
-            <p className="text-muted-foreground">ID: {id}</p>
+            <p className="text-muted-foreground">ID: {notifId}</p>
           </div>
         </div>
 
@@ -247,6 +256,6 @@ export default function OrganizerNotificationStats() {
           </CardContent>
         </Card>
       </div>
-    </DashboardLayout>
+    </Layout>
   );
 }

@@ -1,4 +1,12 @@
-import { LayoutDashboard, Calendar, FileText, Edit, ClipboardCheck, FormInput } from "lucide-react";
+import {
+  LayoutDashboard,
+  Calendar,
+  FileText,
+  Edit,
+  ClipboardCheck,
+  FormInput,
+  Bell,
+} from "lucide-react";
 import { Link, useLocation, useParams } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
@@ -13,7 +21,9 @@ interface ConferenceSidebarProps {
   title?: string;
 }
 
-export const ConferenceSidebar: React.FC<ConferenceSidebarProps> = ({ title }) => {
+export const ConferenceSidebar: React.FC<ConferenceSidebarProps> = ({
+  title,
+}) => {
   const { id } = useParams();
   const location = useLocation();
 
@@ -39,6 +49,11 @@ export const ConferenceSidebar: React.FC<ConferenceSidebarProps> = ({ title }) =
       icon: FormInput,
     },
     {
+      label: "Thông báo",
+      to: `/conference/${id}/notifications`,
+      icon: Bell,
+    },
+    {
       label: "Chỉnh sửa",
       to: `/conference/${id}/edit`,
       icon: Edit,
@@ -52,20 +67,21 @@ export const ConferenceSidebar: React.FC<ConferenceSidebarProps> = ({ title }) =
   ];
 
   const isActive = (path: string) => {
-    if (path.startsWith('#')) {
+    if (path.startsWith("#")) {
       return location.hash === path;
     }
-    return location.pathname === path || location.pathname.startsWith(path + '/');
+    return (
+      location.pathname === path || location.pathname.startsWith(path + "/")
+    );
   };
 
   return (
     <div className="w-20 border-r border-border h-fit sticky top-16 z-40 flex flex-col items-center py-4 overflow-hidden">
-      
       <div className="flex flex-col items-center space-y-6 flex-1">
         {navItems.map((item) => {
           const Icon = item.icon;
           const active = isActive(item.to);
-          
+
           const handleClick = (e: React.MouseEvent) => {
             if (item.openInNewWindow) {
               e.preventDefault();
@@ -75,18 +91,22 @@ export const ConferenceSidebar: React.FC<ConferenceSidebarProps> = ({ title }) =
                 "check-in",
                 "fullscreen=yes,width=1920,height=1080"
               );
-              
+
               if (newWindow) {
                 // Try to enter fullscreen after window opens
                 setTimeout(() => {
                   newWindow.document.documentElement.requestFullscreen?.() ||
-                    (newWindow.document.documentElement as any).webkitRequestFullscreen?.() ||
-                    (newWindow.document.documentElement as any).msRequestFullscreen?.();
+                    (
+                      newWindow.document.documentElement as any
+                    ).webkitRequestFullscreen?.() ||
+                    (
+                      newWindow.document.documentElement as any
+                    ).msRequestFullscreen?.();
                 }, 500);
               }
             }
           };
-          
+
           return (
             <Link
               key={item.to}
@@ -127,4 +147,3 @@ export const ConferenceSidebar: React.FC<ConferenceSidebarProps> = ({ title }) =
 };
 
 export default ConferenceSidebar;
-
