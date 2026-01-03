@@ -2,7 +2,6 @@ import { useMemo, useState, useRef, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { ConferenceLayout } from "@/components/layout/ConferenceLayout";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -20,12 +19,15 @@ type CalendarItem = {
   description?: string;
   start: string; // ISO date string
   end: string; // ISO date string
-  speaker?: { name: string; avatarUrl?: string };
+  speakers?: { id?: number; name: string; avatarUrl?: string }[];
   room: string;
   files?: { name: string; url?: string }[];
 }; 
   
 const HOUR_HEIGHT = 64; // px per hour
+
+const DRAG_STEP_MINUTES = 15;
+const MIN_SESSION_MINUTES = 15;
 
 const COLORS = ["#60a5fa", "#22d3ee", "#34d399", "#fbbf24", "#f472b6", "#a78bfa", "#38bdf8", "#f97316", "#ef4444", "#0ea5e9"];
 
@@ -63,6 +65,16 @@ const getInitials = (name?: string) => {
   return ((p[0]?.[0] || "") + (p[p.length - 1]?.[0] || "")).toUpperCase();
 };
 
+const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
+const clampInt = (n: number, min: number, max: number) => Math.min(max, Math.max(min, Math.trunc(n)));
+
+const formatHHMMFromMinutes = (mins: number) => {
+  const m = clampInt(mins, 0, 24 * 60 - 1);
+  const hh = Math.floor(m / 60);
+  const mm = m % 60;
+  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
+};
+
 const SessionSchedule = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -84,7 +96,7 @@ const SessionSchedule = () => {
     startTime: "",
     endDate: "",
     endTime: "",
-    speaker: "",
+    speakerIds: [] as string[],
     files: [] as { name: string; url?: string }[],
   });
   // Edit state
@@ -106,6 +118,13 @@ const SessionSchedule = () => {
   const daysScrollRef = useRef<HTMLDivElement>(null);
 
   const [items, setItems] = useState<CalendarItem[]>([]);
+
+  const [dragCreate, setDragCreate] = useState<{
+    active: boolean;
+    dayIdx: number;
+    startMin: number;
+    endMin: number;
+  } | null>(null);
 
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
 
@@ -207,7 +226,13 @@ const SessionSchedule = () => {
             description: it.description,
             start: it.start_time,
             end: it.end_time,
-            speaker: it.speakers && it.speakers.length > 0 ? { name: it.speakers[0].full_name || it.speakers[0].full_name, avatarUrl: it.speakers[0].photo_url || it.speakers[0].photo_url } : undefined,
+            speakers: Array.isArray(it.speakers)
+              ? it.speakers.map((sp: any) => ({
+                  id: sp.id,
+                  name: sp.full_name,
+                  avatarUrl: sp.photo_url,
+                }))
+              : [],
             room: it.place,
             files: [],
           }))
@@ -286,6 +311,16 @@ const SessionSchedule = () => {
       // Edit mode
       const start = new Date(session.start);
       const end = new Date(session.end);
+
+      const sessionSpeakerIds = (session.speakers || [])
+        .map((sp) => {
+          if (typeof sp.id === 'number') return String(sp.id);
+          // Fallback: match by name against loaded speakers list
+          const match = speakers.find((s) => s.full_name === sp.name);
+          return match ? String(match.id) : null;
+        })
+        .filter(Boolean) as string[];
+
       setFormData({
         title: session.title,
         description: session.description || "",
@@ -293,7 +328,7 @@ const SessionSchedule = () => {
         startTime: start.toTimeString().slice(0,5),
         endDate: end.toISOString().split('T')[0],
         endTime: end.toTimeString().slice(0,5),
-        speaker: session.speaker?.name ? (speakers.find(s => s.full_name === session.speaker?.name)?.id?.toString() || "") : "",
+        speakerIds: sessionSpeakerIds,
         files: session.files || [],
       });
       setEditSessionId(session.id);
@@ -310,7 +345,7 @@ const SessionSchedule = () => {
         startTime: "09:00",
         endDate: tomorrow.toISOString().split('T')[0],
         endTime: "17:00",
-        speaker: "",
+        speakerIds: [],
         files: [],
       });
       setEditSessionId(null);
@@ -358,7 +393,7 @@ const SessionSchedule = () => {
       end_time: endDateTime.toISOString(),
       place: selectedRoom,
       capacity: 50,
-      speakers: formData.speaker ? [Number(formData.speaker)] : [],
+      speakers: (formData.speakerIds || []).map((sid) => Number(sid)).filter((n) => Number.isFinite(n)),
     };
 
     (async () => {
@@ -373,7 +408,9 @@ const SessionSchedule = () => {
             description: data.description,
             start: data.start_time,
             end: data.end_time,
-            speaker: data.speakers && data.speakers.length > 0 ? { name: data.speakers[0].full_name, avatarUrl: data.speakers[0].photo_url } : undefined,
+            speakers: Array.isArray(data.speakers)
+              ? data.speakers.map((sp: any) => ({ id: sp.id, name: sp.full_name, avatarUrl: sp.photo_url }))
+              : [],
             room: data.place,
             files: [],
           } : item));
@@ -391,7 +428,9 @@ const SessionSchedule = () => {
             description: data.description,
             start: data.start_time,
             end: data.end_time,
-            speaker: data.speakers && data.speakers.length > 0 ? { name: data.speakers[0].full_name, avatarUrl: data.speakers[0].photo_url } : undefined,
+            speakers: Array.isArray(data.speakers)
+              ? data.speakers.map((sp: any) => ({ id: sp.id, name: sp.full_name, avatarUrl: sp.photo_url }))
+              : [],
             room: data.place,
             files: [],
           };
@@ -414,8 +453,128 @@ const SessionSchedule = () => {
 
   const canAddItem = !!selectedRoom && isEditable;
 
+  const getMinutesFromPointer = (e: React.PointerEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const y = e.clientY - rect.top;
+    const rawMinutes = (y / HOUR_HEIGHT) * 60;
+    const stepped = Math.round(rawMinutes / DRAG_STEP_MINUTES) * DRAG_STEP_MINUTES;
+    return clampInt(stepped, 0, 24 * 60 - 1);
+  };
+
+  const getDayIdxFromPointer = (e: React.PointerEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const colW = rect.width / 7;
+    return clampInt(Math.floor(x / colW), 0, 6);
+  };
+
+  const handleGridPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!canAddItem || isDialogOpen) return;
+    // Only start drag on primary button (mouse) or touch/pen.
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+
+    const target = e.target as Element | null;
+    // Don't start a drag if the user is interacting with an existing session card.
+    if (target?.closest('[data-session-card="true"]')) return;
+
+    const dayIdx = getDayIdxFromPointer(e);
+    const startMin = getMinutesFromPointer(e);
+    const endMin = clampInt(startMin + DRAG_STEP_MINUTES, 0, 24 * 60 - 1);
+
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    setDragCreate({ active: true, dayIdx, startMin, endMin });
+  };
+
+  const handleGridPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragCreate?.active) return;
+    const endMin = getMinutesFromPointer(e);
+    setDragCreate((prev) => (prev ? { ...prev, endMin } : prev));
+  };
+
+  const cancelDragCreate = () => setDragCreate(null);
+
+  const finalizeDragCreate = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragCreate?.active) return;
+    const { dayIdx, startMin, endMin } = dragCreate;
+
+    const a = Math.min(startMin, endMin);
+    let b = Math.max(startMin, endMin);
+    if (b - a < MIN_SESSION_MINUTES) b = a + MIN_SESSION_MINUTES;
+    b = clampInt(b, 0, 24 * 60 - 1);
+
+    const day = weekDays[dayIdx];
+    if (!day) {
+      setDragCreate(null);
+      return;
+    }
+
+    const start = new Date(day);
+    start.setHours(0, 0, 0, 0);
+    start.setMinutes(a);
+    const end = new Date(day);
+    end.setHours(0, 0, 0, 0);
+    end.setMinutes(b);
+
+    setEditSessionId(null);
+    setFormData({
+      title: "",
+      description: "",
+      startDate: start.toISOString().split("T")[0],
+      startTime: start.toTimeString().slice(0, 5),
+      endDate: end.toISOString().split("T")[0],
+      endTime: end.toTimeString().slice(0, 5),
+      speakerIds: [],
+      files: [],
+    });
+    setIsDialogOpen(true);
+    setDragCreate(null);
+  };
+
   const headerDateStr = today.toLocaleDateString("vi-VN", { day: "2-digit", month: "long", year: "numeric" });
   const weekRangeStr = `${weekDays[0].toLocaleDateString('vi-VN',{day: '2-digit', month: 'short'})} - ${weekDays[6].toLocaleDateString('vi-VN',{day: '2-digit', month: 'short'})}`;
+
+  const toggleSpeakerId = (speakerId: string) => {
+    setFormData((prev) => {
+      const current = prev.speakerIds || [];
+      const exists = current.includes(speakerId);
+      return {
+        ...prev,
+        speakerIds: exists ? current.filter((id) => id !== speakerId) : [...current, speakerId],
+      };
+    });
+  };
+
+  const selectedSpeakers = useMemo(() => {
+    const set = new Set(formData.speakerIds || []);
+    return speakers.filter((s) => set.has(String(s.id)));
+  }, [formData.speakerIds, speakers]);
+
+  const renderSpeakerBubbles = (sessionSpeakers?: { name: string; avatarUrl?: string }[]) => {
+    const list = Array.isArray(sessionSpeakers) ? sessionSpeakers : [];
+    if (list.length === 0) return null;
+    const shown = list.slice(0, 3);
+    const remaining = list.length - shown.length;
+
+    return (
+      <div className="flex items-center -space-x-2">
+        {shown.map((sp, idx) => (
+          <Avatar key={`${sp.name}-${idx}`} className="h-6 w-6 ring-2 ring-white/50">
+            {sp.avatarUrl ? (
+              <AvatarImage src={sp.avatarUrl} alt={sp.name} />
+            ) : (
+              <AvatarFallback className="bg-black/20 text-white">{getInitials(sp.name)}</AvatarFallback>
+            )}
+          </Avatar>
+        ))}
+        {remaining > 0 && (
+          <div className="h-6 w-6 rounded-full bg-black/20 text-white text-[10px] flex items-center justify-center ring-2 ring-white/50">
+            +{remaining}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <ConferenceLayout sidebarTitle="Hội nghị Công nghệ Số Việt Nam 2025">
@@ -482,7 +641,15 @@ const SessionSchedule = () => {
 
             {/* Days grid */}
             <ScrollArea ref={daysScrollRef} className="h-full">
-              <div className="grid grid-cols-7 relative" style={{ height: HOUR_HEIGHT * 24 }}>
+              <div
+                className={`grid grid-cols-7 relative ${canAddItem ? "cursor-crosshair" : ""}`}
+                style={{ height: HOUR_HEIGHT * 24 }}
+                onPointerDown={handleGridPointerDown}
+                onPointerMove={handleGridPointerMove}
+                onPointerUp={finalizeDragCreate}
+                onPointerCancel={cancelDragCreate}
+                onPointerLeave={cancelDragCreate}
+              >
                 {weekDays.map((day, dayIdx) => (
                   <div key={dayIdx} className={`relative border-l ${day.getFullYear() === today.getFullYear() && day.getMonth() === today.getMonth() && day.getDate() === today.getDate() ? 'bg-gray-50' : ''}`}>
                     {/* hour lines */}
@@ -514,6 +681,29 @@ const SessionSchedule = () => {
                       return null;
                     })()}
 
+                    {/* drag-to-create preview */}
+                    {canAddItem && dragCreate?.active && dragCreate.dayIdx === dayIdx && (() => {
+                      const a = Math.min(dragCreate.startMin, dragCreate.endMin);
+                      let b = Math.max(dragCreate.startMin, dragCreate.endMin);
+                      if (b - a < MIN_SESSION_MINUTES) b = a + MIN_SESSION_MINUTES;
+                      b = clampInt(b, 0, 24 * 60 - 1);
+                      const top = (a / 60) * HOUR_HEIGHT;
+                      const height = ((b - a) / 60) * HOUR_HEIGHT;
+                      return (
+                        <div
+                          className="absolute left-2 right-2 rounded-xl border border-dashed bg-muted/60 text-foreground shadow-sm pointer-events-none"
+                          style={{ top, height }}
+                        >
+                          <div className="p-3 space-y-1 text-xs">
+                            <div className="font-medium">Tạo phiên hội nghị</div>
+                            <div className="text-muted-foreground">
+                              {formatHHMMFromMinutes(a)} - {formatHHMMFromMinutes(b)}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* events */}
                     <div className="relative h-full px-2">
                       {itemsByDay[dayIdx].map((it) => {
@@ -528,6 +718,7 @@ const SessionSchedule = () => {
                             className="absolute left-2 right-2 rounded-xl shadow-sm text-white overflow-clip cursor-pointer"
                             style={{ top, height, backgroundColor: color }}
                             onClick={() => isEditable && handleOpenDialog(it)}
+                            data-session-card="true"
                           >
                             <div className="p-3 space-y-2 text-sm">
                               <div className="flex justify-between items-start">
@@ -548,13 +739,7 @@ const SessionSchedule = () => {
                               </div>
 
                               <div className='justify-items-start items-end pt-3'>
-                                  <Avatar className="h-6 w-6 ring-2 ring-white/50">
-                                  {it.speaker?.avatarUrl ? (
-                                    <AvatarImage src={it.speaker.avatarUrl} alt={it.speaker.name} />
-                                  ) : (
-                                    <AvatarFallback className="bg-black/20 text-white">{getInitials(it.speaker?.name)}</AvatarFallback>
-                                  )}
-                                </Avatar>
+                                {renderSpeakerBubbles(it.speakers)}
                               </div>
                             </div>
                           </div>
@@ -652,27 +837,63 @@ const SessionSchedule = () => {
             {/* Speaker */}
             <div className="space-y-2">
               <Label htmlFor="speaker">Diễn giả trong phiên hội nghị</Label>
-              <Select value={String(formData.speaker)} onValueChange={(value) => setFormData(prev => ({ ...prev, speaker: value }))}>
-                <SelectTrigger id="speaker">
-                  <SelectValue placeholder="Chọn diễn giả" />
-                </SelectTrigger>
-                <SelectContent>
-                  {speakers.map((speaker) => (
-                    <SelectItem key={speaker.id} value={String(speaker.id)}>
-                      <div className="flex items-center gap-2">
-                        <Avatar className="h-6 w-6">
-                          {speaker.photo_url ? (
-                            <AvatarImage src={speaker.photo_url} alt={speaker.full_name} />
-                          ) : (
-                            <AvatarFallback className="bg-black/20 text-white">{getInitials(speaker.full_name)}</AvatarFallback>
-                          )}
-                        </Avatar>
-                        <span>{speaker.full_name}</span>
+
+              {selectedSpeakers.length > 0 ? (
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center -space-x-2">
+                    {selectedSpeakers.slice(0, 3).map((sp) => (
+                      <Avatar key={sp.id} className="h-7 w-7 ring-2 ring-background">
+                        {sp.photo_url ? (
+                          <AvatarImage src={sp.photo_url} alt={sp.full_name} />
+                        ) : (
+                          <AvatarFallback className="bg-black/20 text-white">{getInitials(sp.full_name)}</AvatarFallback>
+                        )}
+                      </Avatar>
+                    ))}
+                    {selectedSpeakers.length > 3 && (
+                      <div className="h-7 w-7 rounded-full bg-muted text-foreground text-xs flex items-center justify-center ring-2 ring-background">
+                        +{selectedSpeakers.length - 3}
                       </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                    )}
+                  </div>
+                  <div className="text-sm text-muted-foreground">Đã chọn {selectedSpeakers.length} diễn giả</div>
+                </div>
+              ) : (
+                <div className="text-sm text-muted-foreground">Chưa chọn diễn giả</div>
+              )}
+
+              <div className="rounded-md border">
+                <ScrollArea className="h-48">
+                  <div className="p-2 space-y-1">
+                    {speakers.map((sp) => {
+                      const sid = String(sp.id);
+                      const selected = (formData.speakerIds || []).includes(sid);
+                      return (
+                        <button
+                          key={sp.id}
+                          type="button"
+                          onClick={() => toggleSpeakerId(sid)}
+                          className={`w-full flex items-center gap-3 px-2 py-2 rounded-md text-left hover:bg-muted ${selected ? 'bg-muted' : ''}`}
+                        >
+                          <Avatar className="h-7 w-7">
+                            {sp.photo_url ? (
+                              <AvatarImage src={sp.photo_url} alt={sp.full_name} />
+                            ) : (
+                              <AvatarFallback className="bg-black/20 text-white">{getInitials(sp.full_name)}</AvatarFallback>
+                            )}
+                          </Avatar>
+                          <div className="flex-1">
+                            <div className="text-sm">{sp.full_name}</div>
+                          </div>
+                          {selected && (
+                            <div className="text-xs text-muted-foreground">Đã chọn</div>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </ScrollArea>
+              </div>
             </div>
 
             {/* Files */}

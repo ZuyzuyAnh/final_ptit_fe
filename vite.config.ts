@@ -8,6 +8,16 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    proxy: {
+      // Use same-origin API calls in dev: frontend calls /api/*
+      // and Vite proxies to the backend running in the Codespace.
+      "/api": {
+        target: "http://localhost:3456",
+        changeOrigin: true,
+        secure: false,
+        rewrite: (p) => p.replace(/^\/api/, ""),
+      },
+    },
   },
   plugins: [
     react(),
