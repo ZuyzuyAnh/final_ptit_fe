@@ -17,6 +17,11 @@ export default defineConfig(({ mode }) => ({
         secure: false,
         rewrite: (p) => p.replace(/^\/api/, ""),
       },
+      "/static": {
+        target: "http://localhost:3456",
+        changeOrigin: true,
+        secure: false,
+      },
     },
   },
   plugins: [

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Upload, UserPlus, MoreVertical, Eye, EyeOff } from "lucide-react";
+import { Upload, UserPlus, MoreVertical, Eye, EyeOff, Plus, X } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ConferenceLayout } from "@/components/layout/ConferenceLayout";
 import { ConferenceTopBar } from "@/components/conference/ConferenceTopBar";
@@ -33,6 +33,13 @@ interface Speaker {
   avatarPreview: string | null;
 }
 
+interface SocialLinkDraft {
+  id: string;
+  platform: string;
+  url: string;
+  label: string;
+}
+
 const EVENT_CATEGORIES = [
   { value: "ENVIRONMENT", label: "Môi trường" },
   { value: "ECONOMY", label: "Kinh tế" },
@@ -51,6 +58,7 @@ const EditConference = () => {
   const [logo, setLogo] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
+  const [socialLinks, setSocialLinks] = useState<SocialLinkDraft[]>([]);
   const [isSpeakerModalOpen, setIsSpeakerModalOpen] = useState(false);
   const [editingSpeakerId, setEditingSpeakerId] = useState<string | null>(null);
   const [speakerForm, setSpeakerForm] = useState({
@@ -141,8 +149,59 @@ const EditConference = () => {
       newErrors.location = "Vui lòng chọn vị trí trên bản đồ";
     }
 
+    // Social links validation (optional, but if any row has data then platform+url are required)
+    for (const link of socialLinks) {
+      const platform = link.platform.trim();
+      const url = link.url.trim();
+      const label = link.label.trim();
+
+      if (!platform && !url && !label) continue;
+
+      if (!platform || !url) {
+        newErrors.social_links = "Vui lòng nhập đầy đủ nền tảng và URL cho các liên kết.";
+        break;
+      }
+
+      try {
+        // eslint-disable-next-line no-new
+        new URL(url);
+      } catch {
+        newErrors.social_links = "URL liên kết không hợp lệ.";
+        break;
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
+  };
+
+  const handleAddSocialLink = () => {
+    setSocialLinks((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        platform: "",
+        url: "",
+        label: "",
+      },
+    ]);
+    if (errors.social_links) {
+      setErrors({ ...errors, social_links: "" });
+    }
+  };
+
+  const handleUpdateSocialLink = (id: string, patch: Partial<SocialLinkDraft>) => {
+    setSocialLinks((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+    if (errors.social_links) {
+      setErrors({ ...errors, social_links: "" });
+    }
+  };
+
+  const handleRemoveSocialLink = (id: string) => {
+    setSocialLinks((prev) => prev.filter((l) => l.id !== id));
+    if (errors.social_links) {
+      setErrors({ ...errors, social_links: "" });
+    }
   };
 
   // Load event data
@@ -196,6 +255,19 @@ const EditConference = () => {
               avatarPreview: speaker.photo_url || null,
             }));
             setSpeakers(speakersData);
+          }
+
+          // Load social links
+          if (event.social_links && Array.isArray(event.social_links)) {
+            const links: SocialLinkDraft[] = event.social_links.map((l: any) => ({
+              id: (l.id ?? Date.now()).toString(),
+              platform: l.platform || "",
+              url: l.url || "",
+              label: l.label || "",
+            }));
+            setSocialLinks(links);
+          } else {
+            setSocialLinks([]);
           }
         }
       } catch (err) {
@@ -490,12 +562,24 @@ const EditConference = () => {
 
       updateData.speakers = speakersData;
 
+      const socialLinksPayload = socialLinks
+        .filter((l) => l.platform.trim() && l.url.trim())
+        .map((l, index) => ({
+          platform: l.platform.trim(),
+          url: l.url.trim(),
+          label: l.label.trim(),
+          position: index,
+        }));
+      updateData.social_links = socialLinksPayload;
+
       // If there are new files, use FormData, otherwise use JSON
       if (thumbnail || logo || speakers.some(s => s.avatar)) {
         const formDataToSend = new FormData();
         Object.keys(updateData).forEach((key) => {
           if (key === "speakers") {
             formDataToSend.append("speakers_json", JSON.stringify(updateData.speakers));
+          } else if (key === "social_links") {
+            formDataToSend.append("social_links_json", JSON.stringify(updateData.social_links));
           } else if (key === "tags" && Array.isArray(updateData[key])) {
             updateData[key].forEach((tag: string) => {
               formDataToSend.append("tags[]", tag);
@@ -899,6 +983,76 @@ const EditConference = () => {
               <p className="text-xs text-muted-foreground">
                 Địa chỉ sẽ tự động cập nhật khi bạn chọn vị trí trên bản đồ. Bạn cũng có thể chỉnh sửa thủ công.
               </p>
+            </div>
+
+            {/* Social Links */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-base font-medium">Liên kết mạng xã hội</Label>
+                <Button type="button" variant="secondary" onClick={handleAddSocialLink}>
+                  <Plus className="w-5 h-5 text-muted-foreground" />
+                  Thêm liên kết
+                </Button>
+              </div>
+
+              {socialLinks.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Chưa có liên kết nào.</p>
+              ) : (
+                <div className="space-y-3">
+                  {socialLinks.map((link) => (
+                    <div
+                      key={link.id}
+                      className="grid grid-cols-1 md:grid-cols-12 gap-2 items-start border rounded-lg p-3"
+                    >
+                      <div className="md:col-span-3 space-y-1">
+                        <Label className="text-sm text-muted-foreground">Nền tảng</Label>
+                        <Input
+                          placeholder="Facebook, LinkedIn..."
+                          value={link.platform}
+                          onChange={(e) =>
+                            handleUpdateSocialLink(link.id, { platform: e.target.value })
+                          }
+                        />
+                      </div>
+
+                      <div className="md:col-span-6 space-y-1">
+                        <Label className="text-sm text-muted-foreground">URL</Label>
+                        <Input
+                          placeholder="https://..."
+                          value={link.url}
+                          onChange={(e) => handleUpdateSocialLink(link.id, { url: e.target.value })}
+                        />
+                      </div>
+
+                      <div className="md:col-span-2 space-y-1">
+                        <Label className="text-sm text-muted-foreground">Nhãn</Label>
+                        <Input
+                          placeholder="(tuỳ chọn)"
+                          value={link.label}
+                          onChange={(e) =>
+                            handleUpdateSocialLink(link.id, { label: e.target.value })
+                          }
+                        />
+                      </div>
+
+                      <div className="md:col-span-1 flex md:justify-end pt-6">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleRemoveSocialLink(link.id)}
+                        >
+                          <X className="w-5 h-5" />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {errors.social_links && (
+                <p className="text-sm text-destructive">{errors.social_links}</p>
+              )}
             </div>
           </form>
 

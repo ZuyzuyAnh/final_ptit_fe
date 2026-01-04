@@ -31,6 +31,7 @@ import EditNotification from "./pages/EditNotification";
 import NotificationStats from "./pages/NotificationStats";
 import Profile from "./pages/Profile";
 import OrganizerProfile from "./pages/OrganizerProfile";
+import EventResources from "./pages/EventResources";
 
 const queryClient = new QueryClient();
 
@@ -124,6 +125,14 @@ const App = () => (
               element={
                 <ProtectedRoute requiredUserType="organizer">
                   <FormManagement />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/conference/:id/resources"
+              element={
+                <ProtectedRoute requiredUserType="organizer">
+                  <EventResources />
                 </ProtectedRoute>
               }
             />

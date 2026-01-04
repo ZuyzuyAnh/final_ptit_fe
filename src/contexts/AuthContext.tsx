@@ -15,7 +15,7 @@ export interface UserProfile {
   name: string;
   email: string;
   phone: string;
-  avatar?: string; // for organizer
+  avatar?: string; 
   roles?: Array<{
     _id: string;
     name: string;
@@ -82,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(profile);
           setUserType(storedUserType);
           // Fetch permissions for admin/system user
-          await fetchPermissions(profile._id);
+          await fetchPermissions(profile._id );
         } else {
           throw new Error("Failed to get admin profile");
         }

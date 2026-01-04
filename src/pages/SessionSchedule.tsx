@@ -23,6 +23,14 @@ type CalendarItem = {
   room: string;
   files?: { name: string; url?: string }[];
 }; 
+
+type SessionResource = {
+  id: number;
+  name: string;
+  url_source: string;
+  description?: string | null;
+  resource_type: "FILE" | "MAPS";
+};
   
 const HOUR_HEIGHT = 64; // px per hour
 
@@ -97,7 +105,7 @@ const SessionSchedule = () => {
     endDate: "",
     endTime: "",
     speakerIds: [] as string[],
-    files: [] as { name: string; url?: string }[],
+    files: [] as { id?: number; name: string; url?: string; file?: File }[],
   });
   // Edit state
   const [editSessionId, setEditSessionId] = useState<string | null>(null);
@@ -302,7 +310,7 @@ const SessionSchedule = () => {
   }
 
   // Open dialog for new or edit
-  const handleOpenDialog = (session?: CalendarItem) => {
+  const handleOpenDialog = async (session?: CalendarItem) => {
     if (!selectedRoom && !session) {
       alert('Vui lòng thêm phòng trước khi tạo phiên hội nghị.');
       return;
@@ -329,10 +337,23 @@ const SessionSchedule = () => {
         endDate: end.toISOString().split('T')[0],
         endTime: end.toTimeString().slice(0,5),
         speakerIds: sessionSpeakerIds,
-        files: session.files || [],
+        files: [],
       });
       setEditSessionId(session.id);
       setIsDialogOpen(true);
+
+      const res = await safeRequest(() => api.get(`/organizer/resources/session/${session.id}`));
+      const raw = (res as any)?.data ?? res ?? null;
+      const container = raw?.data ?? raw;
+      const list: SessionResource[] = Array.isArray(container?.data)
+        ? container.data
+        : Array.isArray(container)
+        ? container
+        : [];
+      setFormData((prev) => ({
+        ...prev,
+        files: list.map((r) => ({ id: r.id, name: r.name, url: r.url_source }))
+      }));
     } else {
       // New mode
       const now = new Date();
@@ -357,9 +378,10 @@ const SessionSchedule = () => {
     const files = e.target.files;
     if (!files) return;
     
-    const newFiles = Array.from(files).map(file => ({
+    const newFiles = Array.from(files).map((file) => ({
       name: file.name,
-      url: undefined, // In real app, upload and get URL
+      url: undefined,
+      file,
     }));
     
     setFormData(prev => ({
@@ -368,7 +390,15 @@ const SessionSchedule = () => {
     }));
   };
 
-  const handleRemoveFile = (index: number) => {
+  const handleRemoveFile = async (index: number) => {
+    const target = formData.files[index];
+    if (!target) return;
+
+    if (target.id) {
+      const ok = await safeRequest(() => api.delete(`/organizer/resources/${target.id}`));
+      if (ok === undefined) return;
+    }
+
     setFormData(prev => ({
       ...prev,
       files: prev.files.filter((_, i) => i !== index),
@@ -416,6 +446,21 @@ const SessionSchedule = () => {
           } : item));
           setIsDialogOpen(false);
           setEditSessionId(null);
+
+          const pending = formData.files.filter((f) => !!f.file);
+          if (pending.length > 0) {
+            await safeRequest(async () => {
+              for (const f of pending) {
+                const fd = new FormData();
+                fd.append('session_id', String(editSessionId));
+                fd.append('resource_type', 'FILE');
+                fd.append('name', (f.name || f.file!.name).trim());
+                fd.append('file', f.file!);
+                await api.post('/organizer/resources', fd);
+              }
+              return true as any;
+            });
+          }
         }
       } else {
         // New mode
@@ -442,8 +487,23 @@ const SessionSchedule = () => {
   };
 
   const handleDeleteSession = async () => {
-    if (!deleteConfirm.sessionId) return;
-    
+
+          const pending = formData.files.filter((f) => !!f.file);
+          if (pending.length > 0) {
+            await safeRequest(async () => {
+              for (const f of pending) {
+                const fd = new FormData();
+                fd.append('session_id', String(newItem.id));
+                fd.append('resource_type', 'FILE');
+                fd.append('name', (f.name || f.file!.name).trim());
+                fd.append('file', f.file!);
+                await api.post('/organizer/resources', fd);
+              }
+              return true as any;
+            });
+          }
+
+          setIsDialogOpen(false);
     const ok = await safeRequest(() => api.delete(`/organizer/sessions/${deleteConfirm.sessionId}`));
     if (ok !== undefined) {
       setItems(prev => prev.filter(i => i.id !== deleteConfirm.sessionId));
@@ -905,7 +965,18 @@ const SessionSchedule = () => {
                     key={index}
                     className="flex items-center gap-2 px-3 py-1.5 bg-muted rounded-md text-sm"
                   >
-                    <span>{file.name}</span>
+                    {file.url ? (
+                      <a
+                        href={file.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="hover:underline"
+                      >
+                        {file.name}
+                      </a>
+                    ) : (
+                      <span>{file.name}</span>
+                    )}
                     <button
                       type="button"
                       onClick={() => handleRemoveFile(index)}

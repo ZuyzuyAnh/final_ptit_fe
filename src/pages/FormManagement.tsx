@@ -21,6 +21,7 @@ type FormField = {
   type: FieldType;
   required: boolean;
   placeholder?: string;
+  description?: string;
   options?: string[]; // For multiple choice
   isDefault?: boolean; // For name and email fields
 };
@@ -31,6 +32,24 @@ const FormManagement = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const { api, safeRequest } = useApi()
+
+  const getDefaultFieldDescription = (fieldLabel?: string, fieldType?: string) => {
+    const label = (fieldLabel || '').toLowerCase();
+
+    if (fieldType === 'EMAIL' || label.includes('email')) {
+      return 'Email dùng để liên hệ và xác nhận đăng ký.';
+    }
+    if (label.includes('họ và tên') || label.includes('ho va ten') || label.includes('họ tên') || label.includes('ho ten')) {
+      return 'Vui lòng nhập họ và tên đầy đủ.';
+    }
+    if (label.includes('ngày sinh') || label.includes('ngay sinh')) {
+      return 'Vui lòng chọn ngày sinh.';
+    }
+    if (label.includes('giới tính') || label.includes('gioi tinh')) {
+      return 'Vui lòng chọn giới tính.';
+    }
+    return '';
+  }
 
   // Form state
   const [formTitle, setFormTitle] = useState<string>("");
@@ -48,6 +67,7 @@ const FormManagement = () => {
     type: "text",
     required: false,
     placeholder: "Điền thông tin tham gia tại đây...",
+    description: "",
   });
 
   // Mock form info (replace with API)
@@ -107,6 +127,7 @@ const FormManagement = () => {
       type: (newField.type || "text") as FieldType,
       required: newField.required || false,
       placeholder: newField.placeholder || "Điền thông tin tham gia tại đây...",
+      description: newField.description || "",
       options: newField.type === "multipleChoice" ? [] : undefined,
     };
 
@@ -116,6 +137,7 @@ const FormManagement = () => {
       type: "text",
       required: false,
       placeholder: "Điền thông tin tham gia tại đây...",
+      description: "",
     });
     setIsAddFieldDialogOpen(false);
   };
@@ -200,7 +222,7 @@ const FormManagement = () => {
 
     return {
       field_label: f.label,
-      field_description: '',
+      field_description: f.description || '',
       field_type: FIELD_TYPE_MAP[f.type] || 'TEXT',
       field_options: f.options || [],
       field_has_other_option: false,
@@ -245,12 +267,16 @@ const FormManagement = () => {
                 NUMBER: 'number',
                 DATE: 'date'
               }
+              const fieldDescription = (f.field_description && String(f.field_description).trim().length > 0)
+                ? f.field_description
+                : (f.is_primary_key ? getDefaultFieldDescription(f.field_label, f.field_type) : '');
               return {
                 id: f._id || String(idx),
                 label: f.field_label,
                 type: TYPE_MAP[f.field_type] || 'text',
                 required: !!f.required,
                 options: f.field_options || [],
+                description: fieldDescription,
                 isDefault: !!f.is_primary_key
               }
             })
@@ -276,12 +302,16 @@ const FormManagement = () => {
                 NUMBER: 'number',
                 DATE: 'date'
               }
+              const fieldDescription = (f.field_description && String(f.field_description).trim().length > 0)
+                ? f.field_description
+                : (f.is_primary_key ? getDefaultFieldDescription(f.field_label, f.field_type) : '');
               return {
                 id: f._id || String(idx),
                 label: f.field_label,
                 type: TYPE_MAP[f.field_type] || 'text',
                 required: !!f.required,
                 options: f.field_options || [],
+                description: fieldDescription,
                 isDefault: !!f.is_primary_key
               }
             })
@@ -323,12 +353,16 @@ const FormManagement = () => {
             NUMBER: 'number',
             DATE: 'date'
           }
+          const fieldDescription = (f.field_description && String(f.field_description).trim().length > 0)
+            ? f.field_description
+            : (f.is_primary_key ? getDefaultFieldDescription(f.field_label, f.field_type) : '');
           return {
             id: f._id || String(idx),
             label: f.field_label,
             type: TYPE_MAP[f.field_type] || 'text',
             required: !!f.required,
             options: f.field_options || [],
+            description: fieldDescription,
             isDefault: !!f.is_primary_key
           }
         })
@@ -459,6 +493,17 @@ const FormManagement = () => {
                               Trường mặc định
                             </span>
                           )}
+                        </div>
+
+                        <div className="space-y-2 mb-3">
+                          <Label className="text-sm text-muted-foreground">Mô tả câu hỏi</Label>
+                          <Textarea
+                            value={field.description || ""}
+                            onChange={(e) => handleFieldUpdate(field.id, { description: e.target.value })}
+                            placeholder="Nhập mô tả (không bắt buộc)..."
+                            rows={2}
+                            disabled={field.isDefault}
+                          />
                         </div>
 
                         {/* Input based on type */}
@@ -668,6 +713,16 @@ const FormManagement = () => {
                 value={newField.label}
                 onChange={(e) => setNewField((prev) => ({ ...prev, label: e.target.value }))}
                 placeholder="Nhập nhãn trường..."
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="new-field-description">Mô tả câu hỏi</Label>
+              <Textarea
+                id="new-field-description"
+                value={newField.description || ""}
+                onChange={(e) => setNewField((prev) => ({ ...prev, description: e.target.value }))}
+                placeholder="Nhập mô tả (không bắt buộc)..."
+                rows={2}
               />
             </div>
             <div className="space-y-2">

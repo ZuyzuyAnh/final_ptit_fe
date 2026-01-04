@@ -5,8 +5,12 @@ import { QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useApi } from "@/hooks/use-api";
 import { toast } from "@/hooks/use-toast";
+import imageCheckIn from "@/assets/img/image_check_in.png";
+import imageCheckInComplete from "@/assets/img/image_check_in_complete.png";
+import imageCheckInFailed from "@/assets/img/image_check_in_failed.png";
 
 const INACTIVITY_TIMEOUT = 3 * 60 * 1000; // 3 minutes in milliseconds
+const SCAN_DEADTIME_MS = 6 * 1000; // ignore same QR for 6 seconds
 
 const CheckIn = () => {
   const { id } = useParams();
@@ -19,9 +23,63 @@ const CheckIn = () => {
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lastActivityRef = useRef<number>(Date.now());
 
+  const isProcessingScanRef = useRef(false);
+  const lastScanAtRef = useRef(0);
+  const lastHandledQrRef = useRef<string>("");
+  const lastHandledAtRef = useRef(0);
+
+  const successAudioRef = useRef<HTMLAudioElement | null>(null);
+  const failureAudioRef = useRef<HTMLAudioElement | null>(null);
+  const feedbackTimersRef = useRef<{ fade?: ReturnType<typeof setTimeout>; close?: ReturnType<typeof setTimeout> }>({});
+
+  const [checkinFeedback, setCheckinFeedback] = useState<
+    | { open: false }
+    | { open: true; type: "success" | "failure"; message: string; fading: boolean }
+  >({ open: false });
+
   // Conference data - in real app, fetch from API using id
   const conferenceTitle = "Hội nghị Công nghệ Số Việt Nam 2025";
   const { api, safeRequest } = useApi();
+
+  useEffect(() => {
+    // Audio cues (kept in public/ so we can reference root paths)
+    successAudioRef.current = new Audio("/success_checkin.mp3");
+    successAudioRef.current.preload = "auto";
+    failureAudioRef.current = new Audio("/failure_checkin.mp3");
+    failureAudioRef.current.preload = "auto";
+
+    return () => {
+      if (feedbackTimersRef.current.fade) clearTimeout(feedbackTimersRef.current.fade);
+      if (feedbackTimersRef.current.close) clearTimeout(feedbackTimersRef.current.close);
+    };
+  }, []);
+
+  const showCheckinFeedback = (type: "success" | "failure", message: string) => {
+    if (feedbackTimersRef.current.fade) clearTimeout(feedbackTimersRef.current.fade);
+    if (feedbackTimersRef.current.close) clearTimeout(feedbackTimersRef.current.close);
+
+    // Play sound (best-effort)
+    const audio = type === "success" ? successAudioRef.current : failureAudioRef.current;
+    if (audio) {
+      try {
+        audio.currentTime = 0;
+        const maybePromise = audio.play();
+        if (maybePromise && typeof (maybePromise as any).catch === "function") {
+          (maybePromise as any).catch(() => undefined);
+        }
+      } catch {
+        // ignore autoplay restrictions
+      }
+    }
+
+    setCheckinFeedback({ open: true, type, message, fading: false });
+    feedbackTimersRef.current.fade = setTimeout(() => {
+      setCheckinFeedback((prev) => (prev.open ? { ...prev, fading: true } : prev));
+    }, 4500);
+    feedbackTimersRef.current.close = setTimeout(() => {
+      setCheckinFeedback({ open: false });
+    }, 5000);
+  };
 
   const resetInactivityTimer = () => {
     lastActivityRef.current = Date.now();
@@ -90,6 +148,8 @@ const CheckIn = () => {
         },
         (decodedText) => {
           // QR code scanned successfully
+          // Guard against rapid duplicate callbacks
+          if (isProcessingScanRef.current) return;
           handleQRCodeScanned(decodedText);
         },
         (errorMessage) => {
@@ -125,6 +185,18 @@ const CheckIn = () => {
   };
 
   const handleQRCodeScanned = async (qrCode: string) => {
+    const now = Date.now();
+    if (isProcessingScanRef.current) return;
+    if (now - lastScanAtRef.current < 1200) return;
+    lastScanAtRef.current = now;
+
+    const raw = (qrCode || "").trim();
+    if (raw && raw === lastHandledQrRef.current && now - lastHandledAtRef.current < SCAN_DEADTIME_MS) {
+      return;
+    }
+
+    isProcessingScanRef.current = true;
+
     console.log("QR Code scanned:", qrCode);
 
     // Reset inactivity timer when QR code is scanned
@@ -135,7 +207,7 @@ const CheckIn = () => {
 
     try {
       // Extract registration id from scanned content
-      const scanned = (qrCode || "").trim();
+      const scanned = raw;
 
       const extractRegistrationId = (text: string) => {
         if (!text) return null;
@@ -186,13 +258,21 @@ const CheckIn = () => {
       const registrationId = extractRegistrationId(scanned);
       if (!registrationId) {
         toast({ title: 'QR không hợp lệ', description: 'Không tìm thấy mã đăng ký trong QR.' });
-        setTimeout(() => startScanning(), 1000);
+        showCheckinFeedback('failure', 'QR không hợp lệ');
+        setTimeout(() => {
+          isProcessingScanRef.current = false;
+          startScanning();
+        }, 1000);
         return;
       }
 
       if (!id) {
         toast({ title: 'Thiếu event_id', description: 'Không xác định được sự kiện để check-in.' });
-        setTimeout(() => startScanning(), 1000);
+        showCheckinFeedback('failure', 'Thiếu event_id');
+        setTimeout(() => {
+          isProcessingScanRef.current = false;
+          startScanning();
+        }, 1000);
         return;
       }
 
@@ -202,25 +282,48 @@ const CheckIn = () => {
 
       if (!res) {
         // safeRequest already shows error via feedback provider. Restart scanning.
-        setTimeout(() => startScanning(), 1000);
+        showCheckinFeedback('failure', 'Check-in thất bại');
+        setTimeout(() => {
+          isProcessingScanRef.current = false;
+          startScanning();
+        }, 1000);
         return;
       }
 
       const msg = (res as any)?.message ?? 'Check-in thành công.';
       toast({ title: 'Check-in', description: String(msg) });
+      showCheckinFeedback('success', String(msg));
+
+      // Deadtime for same QR content
+      lastHandledQrRef.current = scanned;
+      lastHandledAtRef.current = Date.now();
 
       // Restart scanning after a short pause so operator can see feedback
-      setTimeout(() => startScanning(), 1000);
+      setTimeout(() => {
+        isProcessingScanRef.current = false;
+        startScanning();
+      }, 1000);
     } catch (err) {
       console.error("Error processing QR code:", err);
       toast({ title: 'Lỗi', description: (err as Error)?.message ?? 'Lỗi khi xử lý QR' });
+      showCheckinFeedback('failure', (err as Error)?.message ?? 'Lỗi khi xử lý QR');
+
+      // Deadtime for same QR content (even on failures)
+      lastHandledQrRef.current = raw;
+      lastHandledAtRef.current = Date.now();
       // Restart scanning even if there's an error
-      setTimeout(() => startScanning(), 1000);
+      setTimeout(() => {
+        isProcessingScanRef.current = false;
+        startScanning();
+      }, 1000);
     }
   };
 
   const handleStartCheckIn = () => {
     setIsWaiting(false);
+    isProcessingScanRef.current = false;
+    lastHandledQrRef.current = "";
+    lastHandledAtRef.current = 0;
     startScanning();
   };
 
@@ -285,22 +388,11 @@ const CheckIn = () => {
 
               {/* Illustration placeholder */}
               <div className="flex justify-center my-12">
-                <div className="bg-blue-50 rounded-2xl p-8 max-w-2xl w-full">
-                  <div className="relative bg-gradient-to-br from-blue-100 to-blue-200 rounded-xl p-12">
-                    {/* Simple illustration representation */}
-                    <div className="flex items-center justify-center space-x-8">
-                      <div className="w-24 h-24 bg-blue-500 rounded-full flex items-center justify-center text-white text-2xl font-bold">
-                        👤
-                      </div>
-                      <div className="w-32 h-32 bg-white rounded-xl flex items-center justify-center shadow-lg">
-                        <QrCode className="w-16 h-16 text-gray-400" />
-                      </div>
-                      <div className="w-24 h-24 bg-yellow-400 rounded-full flex items-center justify-center text-white text-2xl font-bold">
-                        👩
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <img
+                  src={imageCheckIn}
+                  alt="Check-in"
+                  className="max-w-2xl w-full h-auto object-contain"
+                />
               </div>
 
               <div className="bg-white border-2 border-gray-200 rounded-xl p-6 mb-8">
@@ -344,6 +436,30 @@ const CheckIn = () => {
               >
                 {/* Scanner will be injected here by html5-qrcode */}
               </div>
+
+              {/* Result modal overlay */}
+              {checkinFeedback.open && (
+                <div
+                  className={
+                    "absolute inset-0 z-20 flex items-center justify-center p-6 transition-opacity duration-500 " +
+                    (checkinFeedback.fading ? "opacity-0" : "opacity-100")
+                  }
+                >
+                  <div className="bg-white/95 rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+                    <div className="flex justify-center mb-4">
+                      <img
+                        src={checkinFeedback.type === "success" ? imageCheckInComplete : imageCheckInFailed}
+                        alt={checkinFeedback.type === "success" ? "Check-in thành công" : "Check-in thất bại"}
+                        className="w-28 h-28 object-contain"
+                      />
+                    </div>
+                    <h3 className="text-xl font-heading font-semibold text-gray-900">
+                      {checkinFeedback.type === "success" ? "Check-in thành công" : "Check-in thất bại"}
+                    </h3>
+                    <p className="mt-2 text-sm text-gray-600 break-words">{checkinFeedback.message}</p>
+                  </div>
+                </div>
+              )}
 
               {/* Overlay with corner indicators */}
             </div>
