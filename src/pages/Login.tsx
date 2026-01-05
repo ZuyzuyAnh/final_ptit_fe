@@ -83,7 +83,7 @@ const Login = () => {
   // Handle field blur
   const handleBlur = (field: "email" | "password") => {
     setTouched({ ...touched, [field]: true });
-    
+
     if (field === "email") {
       setErrors({ ...errors, email: validateEmail(formData.email) });
     } else if (field === "password") {
@@ -94,7 +94,7 @@ const Login = () => {
   // Handle field change
   const handleChange = (field: "email" | "password", value: string) => {
     setFormData({ ...formData, [field]: value });
-    
+
     // Clear error when user starts typing
     if (touched[field]) {
       if (field === "email") {

@@ -100,12 +100,8 @@ export const Navigation = () => {
                 </AvatarFallback>
               </Avatar>
               <div className="hidden lg:block text-sm">
-                <div className="font-medium text-foreground">
-                  {user?.name || "User"}
-                </div>
-                <div className="text-muted-foreground text-xs">
-                  {user?.email || ""}
-                </div>
+                <div className="font-medium text-foreground">{user?.name || "User"}</div>
+                <div className="text-muted-foreground text-xs">{user?.email || ""}</div>
               </div>
             </button>
           </div>

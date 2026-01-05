@@ -153,6 +153,38 @@ const App = () => (
               }
             />
             <Route
+              path="/conference/:id/notifications"
+              element={
+                <ProtectedRoute requiredUserType="organizer">
+                  <OrganizerNotifications />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/conference/:id/notifications/create"
+              element={
+                <ProtectedRoute requiredUserType="organizer">
+                  <CreateOrganizerNotification />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/conference/:id/notifications/:notificationId/edit"
+              element={
+                <ProtectedRoute requiredUserType="organizer">
+                  <EditOrganizerNotification />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/conference/:id/notifications/:notificationId/stats"
+              element={
+                <ProtectedRoute requiredUserType="organizer">
+                  <OrganizerNotificationStats />
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/conferences"
               element={
                 <ProtectedRoute requiredUserType="organizer">
