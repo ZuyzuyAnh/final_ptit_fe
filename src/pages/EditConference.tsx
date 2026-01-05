@@ -61,6 +61,7 @@ const EditConference = () => {
   const [socialLinks, setSocialLinks] = useState<SocialLinkDraft[]>([]);
   const [isSpeakerModalOpen, setIsSpeakerModalOpen] = useState(false);
   const [editingSpeakerId, setEditingSpeakerId] = useState<string | null>(null);
+  const [speakerErrors, setSpeakerErrors] = useState<Record<string, string>>({});
   const [speakerForm, setSpeakerForm] = useState({
     full_name: "",
     bio: "",
@@ -172,6 +173,53 @@ const EditConference = () => {
     }
 
     setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  const validateSpeakerForm = () => {
+    const newErrors: Record<string, string> = {};
+
+    const fullName = speakerForm.full_name.trim();
+    const email = speakerForm.email.trim();
+    const phone = speakerForm.phone.trim();
+    const title = speakerForm.professional_title.trim();
+    const linkedinUrl = speakerForm.linkedin_url.trim();
+    const bio = speakerForm.bio.trim();
+
+    if (!fullName) {
+      newErrors.full_name = "Họ và tên diễn giả là bắt buộc";
+    } else if (fullName.length > 255) {
+      newErrors.full_name = "Họ và tên không được vượt quá 255 ký tự";
+    }
+
+    if (!email) {
+      newErrors.email = "Email là bắt buộc";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      newErrors.email = "Email không hợp lệ";
+    }
+
+    if (phone && phone.length > 20) {
+      newErrors.phone = "Số điện thoại không được vượt quá 20 ký tự";
+    }
+
+    if (title && title.length > 255) {
+      newErrors.professional_title = "Chức danh không được vượt quá 255 ký tự";
+    }
+
+    if (bio && bio.length > 5000) {
+      newErrors.bio = "Giới thiệu không được vượt quá 5000 ký tự";
+    }
+
+    if (linkedinUrl) {
+      try {
+        // eslint-disable-next-line no-new
+        new URL(linkedinUrl);
+      } catch {
+        newErrors.linkedin_url = "LinkedIn URL không hợp lệ";
+      }
+    }
+
+    setSpeakerErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
@@ -321,6 +369,7 @@ const EditConference = () => {
   };
 
   const handleOpenSpeakerModal = (speakerId?: string) => {
+    setSpeakerErrors({});
     if (speakerId) {
       const speaker = speakers.find((s) => s.id.toString() === speakerId);
       if (speaker) {
@@ -355,6 +404,7 @@ const EditConference = () => {
   const handleCloseSpeakerModal = () => {
     setIsSpeakerModalOpen(false);
     setEditingSpeakerId(null);
+    setSpeakerErrors({});
     setSpeakerForm({
       full_name: "",
       bio: "",
@@ -368,9 +418,7 @@ const EditConference = () => {
   };
 
   const handleSaveSpeaker = () => {
-    if (!speakerForm.full_name.trim() || !speakerForm.email.trim()) {
-      return;
-    }
+    if (!validateSpeakerForm()) return;
     (async () => {
       // If we're editing an existing event (id is present), persist speaker immediately
       if (id) {
@@ -1072,7 +1120,7 @@ const EditConference = () => {
                   <div className="mb-3">
                     <Upload className="w-10 h-10 mx-auto text-muted-foreground" />
                   </div>
-                  <p>Hãy thêm diễn giả sẽ tham gia và phát trong hội nghị</p>
+                  <p>Không có diễn giả, hãy thêm diễn giả cho hội nghị này.</p>
                 </div>
               ) : (
                 <div className="space-y-4 border-t pt-4">
@@ -1112,8 +1160,14 @@ const EditConference = () => {
       </div>
 
       {/* Speaker Modal - Same as CreateConference */}
-      <Dialog open={isSpeakerModalOpen} onOpenChange={setIsSpeakerModalOpen}>
-        <DialogContent className="max-w-2xl">
+      <Dialog
+        open={isSpeakerModalOpen}
+        onOpenChange={(open) => {
+          if (open) setIsSpeakerModalOpen(true);
+          else handleCloseSpeakerModal();
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingSpeakerId ? "Chỉnh sửa diễn giả" : "Thêm diễn giả"}</DialogTitle>
           </DialogHeader>
@@ -1126,7 +1180,13 @@ const EditConference = () => {
                 <Input
                   placeholder="Nguyễn Văn A"
                   value={speakerForm.full_name}
-                  onChange={(e) => setSpeakerForm({ ...speakerForm, full_name: e.target.value })}
+                  error={speakerErrors.full_name}
+                  onChange={(e) => {
+                    setSpeakerForm({ ...speakerForm, full_name: e.target.value });
+                    if (speakerErrors.full_name) {
+                      setSpeakerErrors((prev) => ({ ...prev, full_name: "" }));
+                    }
+                  }}
                   required
                 />
               </div>
@@ -1139,7 +1199,13 @@ const EditConference = () => {
                   type="email"
                   placeholder="example@email.com"
                   value={speakerForm.email}
-                  onChange={(e) => setSpeakerForm({ ...speakerForm, email: e.target.value })}
+                  error={speakerErrors.email}
+                  onChange={(e) => {
+                    setSpeakerForm({ ...speakerForm, email: e.target.value });
+                    if (speakerErrors.email) {
+                      setSpeakerErrors((prev) => ({ ...prev, email: "" }));
+                    }
+                  }}
                   required
                 />
               </div>
@@ -1150,7 +1216,13 @@ const EditConference = () => {
                   type="tel"
                   placeholder="0123456789"
                   value={speakerForm.phone}
-                  onChange={(e) => setSpeakerForm({ ...speakerForm, phone: e.target.value })}
+                  error={speakerErrors.phone}
+                  onChange={(e) => {
+                    setSpeakerForm({ ...speakerForm, phone: e.target.value });
+                    if (speakerErrors.phone) {
+                      setSpeakerErrors((prev) => ({ ...prev, phone: "" }));
+                    }
+                  }}
                 />
               </div>
 
@@ -1159,9 +1231,13 @@ const EditConference = () => {
                 <Input
                   placeholder="CEO Công ty ABC Tech"
                   value={speakerForm.professional_title}
-                  onChange={(e) =>
-                    setSpeakerForm({ ...speakerForm, professional_title: e.target.value })
-                  }
+                  error={speakerErrors.professional_title}
+                  onChange={(e) => {
+                    setSpeakerForm({ ...speakerForm, professional_title: e.target.value });
+                    if (speakerErrors.professional_title) {
+                      setSpeakerErrors((prev) => ({ ...prev, professional_title: "" }));
+                    }
+                  }}
                 />
               </div>
 
@@ -1171,9 +1247,13 @@ const EditConference = () => {
                   type="url"
                   placeholder="https://linkedin.com/in/..."
                   value={speakerForm.linkedin_url}
-                  onChange={(e) =>
-                    setSpeakerForm({ ...speakerForm, linkedin_url: e.target.value })
-                  }
+                  error={speakerErrors.linkedin_url}
+                  onChange={(e) => {
+                    setSpeakerForm({ ...speakerForm, linkedin_url: e.target.value });
+                    if (speakerErrors.linkedin_url) {
+                      setSpeakerErrors((prev) => ({ ...prev, linkedin_url: "" }));
+                    }
+                  }}
                 />
               </div>
 
@@ -1182,9 +1262,17 @@ const EditConference = () => {
                 <Textarea
                   placeholder="Với hơn 15 năm kinh nghiệm trong phát triển hệ thống AI cho doanh nghiệp..."
                   value={speakerForm.bio}
-                  onChange={(e) => setSpeakerForm({ ...speakerForm, bio: e.target.value })}
+                  onChange={(e) => {
+                    setSpeakerForm({ ...speakerForm, bio: e.target.value });
+                    if (speakerErrors.bio) {
+                      setSpeakerErrors((prev) => ({ ...prev, bio: "" }));
+                    }
+                  }}
                   rows={6}
                 />
+                {speakerErrors.bio && (
+                  <p className="text-sm text-destructive">{speakerErrors.bio}</p>
+                )}
               </div>
             </div>
 
@@ -1232,7 +1320,6 @@ const EditConference = () => {
               </Button>
               <Button
                 onClick={handleSaveSpeaker}
-                disabled={!speakerForm.full_name.trim() || !speakerForm.email.trim()}
               >
                 Lưu thông tin
               </Button>

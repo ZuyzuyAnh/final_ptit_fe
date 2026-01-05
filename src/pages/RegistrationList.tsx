@@ -61,10 +61,8 @@ const RegistrationList = () => {
     created_at: true,
   });
 
-  // computed sizing
-  const visibleCount = Object.values(showColumns).filter(Boolean).length;
-  const baseCols = 3; // STT, Name, Email
-  const totalCols = (fields.length || 0) + baseCols + visibleCount;
+  // computed sizing (current table renders: STT + Check-in + dynamic fields)
+  const totalCols = (fields.length || 0) + 2;
   const tableMinWidth = Math.max(700, totalCols * 180);
 
   useEffect(() => {
@@ -140,13 +138,26 @@ const RegistrationList = () => {
     return <span className="text-sm">{String(value)}</span>;
   };
 
+  const renderCheckinStatus = (reg: any) => {
+    const checkedIn = Boolean(reg?.checked_in);
+    return checkedIn ? (
+      <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">
+        Đã check-in
+      </Badge>
+    ) : (
+      <Badge variant="outline" className="bg-gray-100 text-gray-800 border-gray-200">
+        Chưa check-in
+      </Badge>
+    );
+  };
+
   const handlePageChange = (page: number) => { setCurrentPage(page); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
   return (
     <ConferenceLayout>
       <div className="px-6 py-6 min-w-0">
         <div className="space-y-4 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex gap-2 items-end">
             {/* <Button variant="outline" onClick={() => {}}>
               <Filter className="h-4 w-4 mr-2" /> Lọc
             </Button> */}
@@ -167,8 +178,9 @@ const RegistrationList = () => {
             <div style={{ minWidth: tableMinWidth }} className="min-w-0 inline-block" >
               <Table>
                 <TableHeader>
-                  <TableRow className="bg-muted">
-                    <TableHead className="min-w-[60px] font-medium">STT</TableHead>
+                  <TableRow className="bg-black">
+                    <TableHead className="min-w-[60px] font-medium text-white">STT</TableHead>
+                    <TableHead className="min-w-[120px] font-medium text-white">Check-in</TableHead>
                     {fields.map(f => {
                       // Map field type to min-width
                       const typeWidthMap: Record<string, string> = {
@@ -191,7 +203,7 @@ const RegistrationList = () => {
                       };
                       const minWidth = typeWidthMap[f.type?.toUpperCase?.() || f.type] || 'min-w-[150px]';
                       return (
-                        <TableHead key={f.id} className={`${minWidth} font-medium`}>{f.label}</TableHead>
+                        <TableHead key={f.id} className={`${minWidth} font-medium text-white`}>{f.label}</TableHead>
                       );
                     })}
                   </TableRow>
@@ -201,6 +213,7 @@ const RegistrationList = () => {
                     paginated.map((reg: any, idx: number) => (
                       <TableRow key={reg.registration_id || idx}>
                         <TableCell className="font-medium">{startIndex + idx + 1}</TableCell>
+                        <TableCell className="min-w-[120px]">{renderCheckinStatus(reg)}</TableCell>
                         {fields.map(f => {
                           const typeWidthMap: Record<string, string> = {
                             NUMBER: 'min-w-[48px]',

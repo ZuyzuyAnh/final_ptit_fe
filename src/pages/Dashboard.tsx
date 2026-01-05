@@ -16,6 +16,7 @@ interface Event {
   location: string;
   capacity: number;
   thumbnail: string;
+  logo: string;
   description?: string;
 }
 
@@ -27,6 +28,7 @@ interface Conference {
   location: string;
   attendees: number;
   image: string;
+  thumbnail: string;
   description?: string;
 }
 
@@ -109,7 +111,8 @@ const Dashboard = () => {
         date: dateStr,
         location: event.location,
         attendees: event.capacity || 0,
-        image: event.thumbnail || "/placeholder.svg",
+        image: event.logo || "/placeholder.svg",
+        thumbnail: event.thumbnail || "/placeholder.svg",
         description: event.description,
       };
     });

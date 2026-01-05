@@ -11,6 +11,7 @@ interface Conference {
   date: string;
   location: string;
   attendees: number;
+  logo: string;
   image: string;
   description: string;
 }

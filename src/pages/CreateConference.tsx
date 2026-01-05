@@ -58,6 +58,7 @@ const CreateConference = () => {
   const [socialLinks, setSocialLinks] = useState<SocialLinkDraft[]>([]);
   const [isSpeakerModalOpen, setIsSpeakerModalOpen] = useState(false);
   const [editingSpeakerId, setEditingSpeakerId] = useState<string | null>(null);
+  const [speakerErrors, setSpeakerErrors] = useState<Record<string, string>>({});
   const [speakerForm, setSpeakerForm] = useState({
     full_name: "",
     bio: "",
@@ -177,6 +178,53 @@ const CreateConference = () => {
     return Object.keys(newErrors).length === 0;
   };
 
+  const validateSpeakerForm = () => {
+    const newErrors: Record<string, string> = {};
+
+    const fullName = speakerForm.full_name.trim();
+    const email = speakerForm.email.trim();
+    const phone = speakerForm.phone.trim();
+    const title = speakerForm.professional_title.trim();
+    const linkedinUrl = speakerForm.linkedin_url.trim();
+    const bio = speakerForm.bio.trim();
+
+    if (!fullName) {
+      newErrors.full_name = "Họ và tên diễn giả là bắt buộc";
+    } else if (fullName.length > 255) {
+      newErrors.full_name = "Họ và tên không được vượt quá 255 ký tự";
+    }
+
+    if (!email) {
+      newErrors.email = "Email là bắt buộc";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      newErrors.email = "Email không hợp lệ";
+    }
+
+    if (phone && phone.length > 20) {
+      newErrors.phone = "Số điện thoại không được vượt quá 20 ký tự";
+    }
+
+    if (title && title.length > 255) {
+      newErrors.professional_title = "Chức danh không được vượt quá 255 ký tự";
+    }
+
+    if (bio && bio.length > 5000) {
+      newErrors.bio = "Giới thiệu không được vượt quá 5000 ký tự";
+    }
+
+    if (linkedinUrl) {
+      try {
+        // eslint-disable-next-line no-new
+        new URL(linkedinUrl);
+      } catch {
+        newErrors.linkedin_url = "LinkedIn URL không hợp lệ";
+      }
+    }
+
+    setSpeakerErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
   const handleAddSocialLink = () => {
     setSocialLinks((prev) => [
       ...prev,
@@ -246,6 +294,7 @@ const CreateConference = () => {
   };
 
   const handleOpenSpeakerModal = (speakerId?: string) => {
+    setSpeakerErrors({});
     if (speakerId) {
       const speaker = speakers.find((s) => s.id === speakerId);
       if (speaker) {
@@ -280,6 +329,7 @@ const CreateConference = () => {
   const handleCloseSpeakerModal = () => {
     setIsSpeakerModalOpen(false);
     setEditingSpeakerId(null);
+    setSpeakerErrors({});
     setSpeakerForm({
       full_name: "",
       bio: "",
@@ -293,9 +343,7 @@ const CreateConference = () => {
   };
 
   const handleSaveSpeaker = () => {
-    if (!speakerForm.full_name.trim() || !speakerForm.email.trim()) {
-      return;
-    }
+    if (!validateSpeakerForm()) return;
 
     if (editingSpeakerId) {
       setSpeakers(
@@ -347,6 +395,35 @@ const CreateConference = () => {
     return (first + last).toUpperCase();
   };
 
+  const createSpeakersForEvent = async (eventId: string) => {
+    for (const speaker of speakers) {
+      const fd = new FormData();
+      fd.append("event_id", eventId);
+      fd.append("full_name", speaker.full_name);
+      fd.append("email", speaker.email);
+      fd.append("bio", speaker.bio || "");
+      fd.append("phone", speaker.phone || "");
+      fd.append("title", speaker.professional_title || "");
+      fd.append("linkedin_url", speaker.linkedin_url || "");
+
+      if (speaker.avatar) {
+        fd.append("photo_url", speaker.avatar);
+      }
+
+      const created = await safeRequest(() =>
+        api.post("/organizer/speakers", fd, {
+          sendJson: false,
+        })
+      );
+
+      if (!created) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -385,19 +462,6 @@ const CreateConference = () => {
         formDataToSend.append("logo", logo);
       }
 
-      // Add speakers data - send both as JSON and as form fields for file matching
-      const speakersData = speakers.map((speaker) => ({
-        full_name: speaker.full_name,
-        bio: speaker.bio,
-        email: speaker.email,
-        phone: speaker.phone,
-        professional_title: speaker.professional_title,
-        linkedin_url: speaker.linkedin_url,
-      }));
-
-      // Send speakers metadata as JSON
-      formDataToSend.append("speakers_json", JSON.stringify(speakersData));
-
       const socialLinksPayload = socialLinks
         .filter((l) => l.platform.trim() && l.url.trim())
         .map((l, index) => ({
@@ -408,14 +472,6 @@ const CreateConference = () => {
         }));
       formDataToSend.append("social_links_json", JSON.stringify(socialLinksPayload));
 
-      // Send speaker photos as files with nested fieldnames
-      // Multer with express.urlencoded should create nested structure
-      speakers.forEach((speaker, index) => {
-        if (speaker.avatar) {
-          formDataToSend.append(`speakers[${index}][photo_url]`, speaker.avatar);
-        }
-      });
-
       const result = await safeRequest(() =>
         api.post("/organizer/events", formDataToSend, {
           sendJson: false,
@@ -424,7 +480,17 @@ const CreateConference = () => {
 
       if (result) {
         const createdEvent = (result as any)?.data ?? result;
-        const eventId = createdEvent?._id;
+        const eventId = createdEvent?._id ?? createdEvent?.id;
+
+        if (eventId && speakers.length > 0) {
+          const ok = await createSpeakersForEvent(eventId);
+          // If speaker creation fails, avoid keeping the user on this page
+          // (re-submitting would create a duplicate event).
+          if (!ok) {
+            navigate(`/conference/${eventId}/edit`);
+            return;
+          }
+        }
 
         // If user selected to publish immediately, call the publish endpoint
         if (formData.status === "published" && eventId) {
@@ -884,8 +950,14 @@ const CreateConference = () => {
       </div>
 
       {/* Speaker Modal */}
-      <Dialog open={isSpeakerModalOpen} onOpenChange={setIsSpeakerModalOpen}>
-        <DialogContent className="max-w-2xl">
+      <Dialog
+        open={isSpeakerModalOpen}
+        onOpenChange={(open) => {
+          if (open) setIsSpeakerModalOpen(true);
+          else handleCloseSpeakerModal();
+        }}
+      >
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{editingSpeakerId ? "Chỉnh sửa diễn giả" : "Thêm diễn giả"}</DialogTitle>
           </DialogHeader>
@@ -898,7 +970,13 @@ const CreateConference = () => {
                 <Input
                   placeholder="Nguyễn Văn A"
                   value={speakerForm.full_name}
-                  onChange={(e) => setSpeakerForm({ ...speakerForm, full_name: e.target.value })}
+                  error={speakerErrors.full_name}
+                  onChange={(e) => {
+                    setSpeakerForm({ ...speakerForm, full_name: e.target.value });
+                    if (speakerErrors.full_name) {
+                      setSpeakerErrors((prev) => ({ ...prev, full_name: "" }));
+                    }
+                  }}
                   required
                 />
               </div>
@@ -911,7 +989,13 @@ const CreateConference = () => {
                   type="email"
                   placeholder="example@email.com"
                   value={speakerForm.email}
-                  onChange={(e) => setSpeakerForm({ ...speakerForm, email: e.target.value })}
+                  error={speakerErrors.email}
+                  onChange={(e) => {
+                    setSpeakerForm({ ...speakerForm, email: e.target.value });
+                    if (speakerErrors.email) {
+                      setSpeakerErrors((prev) => ({ ...prev, email: "" }));
+                    }
+                  }}
                   required
                 />
               </div>
@@ -922,7 +1006,13 @@ const CreateConference = () => {
                   type="tel"
                   placeholder="0123456789"
                   value={speakerForm.phone}
-                  onChange={(e) => setSpeakerForm({ ...speakerForm, phone: e.target.value })}
+                  error={speakerErrors.phone}
+                  onChange={(e) => {
+                    setSpeakerForm({ ...speakerForm, phone: e.target.value });
+                    if (speakerErrors.phone) {
+                      setSpeakerErrors((prev) => ({ ...prev, phone: "" }));
+                    }
+                  }}
                 />
               </div>
 
@@ -931,9 +1021,13 @@ const CreateConference = () => {
                 <Input
                   placeholder="CEO Công ty ABC Tech"
                   value={speakerForm.professional_title}
-                  onChange={(e) =>
-                    setSpeakerForm({ ...speakerForm, professional_title: e.target.value })
-                  }
+                  error={speakerErrors.professional_title}
+                  onChange={(e) => {
+                    setSpeakerForm({ ...speakerForm, professional_title: e.target.value });
+                    if (speakerErrors.professional_title) {
+                      setSpeakerErrors((prev) => ({ ...prev, professional_title: "" }));
+                    }
+                  }}
                 />
               </div>
 
@@ -943,9 +1037,13 @@ const CreateConference = () => {
                   type="url"
                   placeholder="https://linkedin.com/in/..."
                   value={speakerForm.linkedin_url}
-                  onChange={(e) =>
-                    setSpeakerForm({ ...speakerForm, linkedin_url: e.target.value })
-                  }
+                  error={speakerErrors.linkedin_url}
+                  onChange={(e) => {
+                    setSpeakerForm({ ...speakerForm, linkedin_url: e.target.value });
+                    if (speakerErrors.linkedin_url) {
+                      setSpeakerErrors((prev) => ({ ...prev, linkedin_url: "" }));
+                    }
+                  }}
                 />
               </div>
 
@@ -954,9 +1052,17 @@ const CreateConference = () => {
                 <Textarea
                   placeholder="Với hơn 15 năm kinh nghiệm trong phát triển hệ thống AI cho doanh nghiệp..."
                   value={speakerForm.bio}
-                  onChange={(e) => setSpeakerForm({ ...speakerForm, bio: e.target.value })}
+                  onChange={(e) => {
+                    setSpeakerForm({ ...speakerForm, bio: e.target.value });
+                    if (speakerErrors.bio) {
+                      setSpeakerErrors((prev) => ({ ...prev, bio: "" }));
+                    }
+                  }}
                   rows={6}
                 />
+                {speakerErrors.bio && (
+                  <p className="text-sm text-destructive">{speakerErrors.bio}</p>
+                )}
               </div>
             </div>
 
@@ -1004,7 +1110,6 @@ const CreateConference = () => {
               </Button>
               <Button
                 onClick={handleSaveSpeaker}
-                disabled={!speakerForm.full_name.trim() || !speakerForm.email.trim()}
               >
                 Lưu thông tin
               </Button>

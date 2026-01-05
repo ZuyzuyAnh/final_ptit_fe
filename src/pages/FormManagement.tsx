@@ -701,7 +701,7 @@ const FormManagement = () => {
           // If closing and reorder dialog is open, don't do anything special
         }}
       >
-        <DialogContent>
+        <DialogContent className="max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Thêm trường mới</DialogTitle>
           </DialogHeader>

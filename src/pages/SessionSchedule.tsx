@@ -67,6 +67,27 @@ const formatDateLabel = (d: Date) => {
 
 const minutesSinceMidnight = (d: Date) => d.getHours() * 60 + d.getMinutes();
 
+const startOfLocalDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+
+const isSameLocalDay = (a: Date, b: Date) =>
+  a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+
+const getConferenceMinuteLimitsForDay = (day: Date, evStart: Date, evEnd: Date) => {
+  const dayStart = startOfLocalDay(day);
+  const evStartDay = startOfLocalDay(evStart);
+  const evEndDay = startOfLocalDay(evEnd);
+
+  if (dayStart < evStartDay || dayStart > evEndDay) return null;
+
+  let minMinute = 0;
+  let maxMinute = 24 * 60 - 1;
+
+  if (isSameLocalDay(day, evStart)) minMinute = minutesSinceMidnight(evStart);
+  if (isSameLocalDay(day, evEnd)) maxMinute = minutesSinceMidnight(evEnd);
+
+  return { minMinute, maxMinute };
+};
+
 const getInitials = (name?: string) => {
   if (!name) return "?";
   const p = name.trim().split(/\s+/);
@@ -467,6 +488,7 @@ const SessionSchedule = () => {
         const res = await safeRequest(() => api.post('/organizer/sessions', payload));
         const data = (res as any)?.data ?? res ?? null;
         if (data) {
+          const createdSessionId = data.id ?? data._id ?? null;
           const newItem: CalendarItem = {
             id: String(data.id || data._id || Date.now()),
             title: data.title,
@@ -480,20 +502,14 @@ const SessionSchedule = () => {
             files: [],
           };
           setItems(prev => [...prev, newItem]);
-          setIsDialogOpen(false);
-        }
-      }
-    })();
-  };
-
-  const handleDeleteSession = async () => {
 
           const pending = formData.files.filter((f) => !!f.file);
-          if (pending.length > 0) {
+          if (pending.length > 0 && (createdSessionId || newItem.id)) {
+            const sessionIdForUpload = createdSessionId ?? newItem.id;
             await safeRequest(async () => {
               for (const f of pending) {
                 const fd = new FormData();
-                fd.append('session_id', String(newItem.id));
+                fd.append('session_id', String(sessionIdForUpload));
                 fd.append('resource_type', 'FILE');
                 fd.append('name', (f.name || f.file!.name).trim());
                 fd.append('file', f.file!);
@@ -504,6 +520,12 @@ const SessionSchedule = () => {
           }
 
           setIsDialogOpen(false);
+        }
+      }
+    })();
+  };
+
+  const handleDeleteSession = async () => {
     const ok = await safeRequest(() => api.delete(`/organizer/sessions/${deleteConfirm.sessionId}`));
     if (ok !== undefined) {
       setItems(prev => prev.filter(i => i.id !== deleteConfirm.sessionId));
@@ -512,6 +534,15 @@ const SessionSchedule = () => {
   };
 
   const canAddItem = !!selectedRoom && isEditable;
+
+  const getDragCreateMinuteLimits = (dayIdx: number) => {
+    if (!event?.start_time || !event?.end_time) return null;
+    const day = weekDays[dayIdx];
+    if (!day) return null;
+    const evStart = new Date(event.start_time);
+    const evEnd = new Date(event.end_time);
+    return getConferenceMinuteLimitsForDay(day, evStart, evEnd);
+  };
 
   const getMinutesFromPointer = (e: React.PointerEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -539,7 +570,20 @@ const SessionSchedule = () => {
 
     const dayIdx = getDayIdxFromPointer(e);
     const startMin = getMinutesFromPointer(e);
-    const endMin = clampInt(startMin + DRAG_STEP_MINUTES, 0, 24 * 60 - 1);
+
+    const limits = getDragCreateMinuteLimits(dayIdx);
+    if (limits) {
+      // Disallow creating sessions outside the conference window.
+      if (startMin < limits.minMinute || startMin > limits.maxMinute) return;
+      // Require minimum duration to fit within the conference window.
+      if (startMin + MIN_SESSION_MINUTES > limits.maxMinute) return;
+    }
+
+    const endMin = clampInt(
+      startMin + DRAG_STEP_MINUTES,
+      limits?.minMinute ?? 0,
+      limits?.maxMinute ?? 24 * 60 - 1
+    );
 
     e.currentTarget.setPointerCapture(e.pointerId);
     e.preventDefault();
@@ -548,7 +592,13 @@ const SessionSchedule = () => {
 
   const handleGridPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragCreate?.active) return;
-    const endMin = getMinutesFromPointer(e);
+    const rawEndMin = getMinutesFromPointer(e);
+    const limits = getDragCreateMinuteLimits(dragCreate.dayIdx);
+    const endMin = clampInt(
+      rawEndMin,
+      limits?.minMinute ?? 0,
+      limits?.maxMinute ?? 24 * 60 - 1
+    );
     setDragCreate((prev) => (prev ? { ...prev, endMin } : prev));
   };
 
@@ -558,10 +608,27 @@ const SessionSchedule = () => {
     if (!dragCreate?.active) return;
     const { dayIdx, startMin, endMin } = dragCreate;
 
+    const limits = getDragCreateMinuteLimits(dayIdx);
+    if (limits) {
+      // If the drag ends up outside the conference bounds, cancel creation.
+      if (startMin < limits.minMinute || startMin > limits.maxMinute) {
+        cancelDragCreate();
+        return;
+      }
+    }
+
     const a = Math.min(startMin, endMin);
     let b = Math.max(startMin, endMin);
     if (b - a < MIN_SESSION_MINUTES) b = a + MIN_SESSION_MINUTES;
-    b = clampInt(b, 0, 24 * 60 - 1);
+    b = clampInt(b, limits?.minMinute ?? 0, limits?.maxMinute ?? 24 * 60 - 1);
+    if (limits && a < limits.minMinute) {
+      cancelDragCreate();
+      return;
+    }
+    if (limits && b > limits.maxMinute) {
+      cancelDragCreate();
+      return;
+    }
 
     const day = weekDays[dayIdx];
     if (!day) {
