@@ -60,11 +60,28 @@ const defaultColors = [
   "#ef4444",
 ];
 
-export const ConferenceStatisticCard: React.FC<ConferenceStatisticCardProps> = (props) => {
-  const height = typeof props.height === "number" ? `${props.height}px` : props.height || "300px";
+export const ConferenceStatisticCard: React.FC<ConferenceStatisticCardProps> = (
+  props
+) => {
+  const height =
+    typeof props.height === "number"
+      ? `${props.height}px`
+      : props.height || "300px";
 
   if (props.type === "bar") {
-    const { title, data, xField, yField, color = "hsl(var(--primary))", legend = false, tooltip = true, grid = true, yMax, valueFormatter, className } = props;
+    const {
+      title,
+      data,
+      xField,
+      yField,
+      color = "hsl(var(--primary))",
+      legend = false,
+      tooltip = true,
+      grid = true,
+      yMax,
+      valueFormatter,
+      className,
+    } = props;
 
     const chartConfig: ChartConfig = {
       [yField]: { label: title, color },
@@ -72,24 +89,34 @@ export const ConferenceStatisticCard: React.FC<ConferenceStatisticCardProps> = (
 
     return (
       <div className="bg-white h-fit rounded-2xl border border-gray-100 shadow-sm p-6">
-
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-            <Clock className="w-5 h-5 text-primary" />{title}
+            <Clock className="w-5 h-5 text-primary" />
+            {title}
           </h2>
         </div>
 
-        <div className="p-4" style={{ height }}>
+        <div className="p-4 overflow-hidden" style={{ height }}>
           <ChartContainer config={chartConfig} className={className}>
             <BarChart data={data}>
               {grid && <CartesianGrid vertical={false} />}
-              <XAxis dataKey={xField} tickLine={false} axisLine={false} tickMargin={8} />
+              <XAxis
+                dataKey={xField}
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+              />
               <YAxis
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
                 allowDecimals={false}
-                domain={[0, typeof yMax === "number" && Number.isFinite(yMax) && yMax > 0 ? yMax : "auto"]}
+                domain={[
+                  0,
+                  typeof yMax === "number" && Number.isFinite(yMax) && yMax > 0
+                    ? yMax
+                    : "auto",
+                ]}
                 tickFormatter={(v) => String(Math.trunc(Number(v)))}
               />
               {tooltip && (
@@ -111,7 +138,17 @@ export const ConferenceStatisticCard: React.FC<ConferenceStatisticCardProps> = (
     );
   }
 
-  const { title, data, nameField, valueField, colors = defaultColors, legend = true, tooltip = true, valueFormatter, className } = props;
+  const {
+    title,
+    data,
+    nameField,
+    valueField,
+    colors = defaultColors,
+    legend = true,
+    tooltip = true,
+    valueFormatter,
+    className,
+  } = props;
 
   const chartConfig: ChartConfig = data.reduce((acc, d, i) => {
     const key = String(d[nameField]);
@@ -122,19 +159,32 @@ export const ConferenceStatisticCard: React.FC<ConferenceStatisticCardProps> = (
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
       <div className="flex items-center justify-between px-5 py-3 border-b">
-        <div className="flex items-center gap-2 text-sm font-medium"><Clock className="h-4 w-4" />{title}</div>
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <Clock className="h-4 w-4" />
+          {title}
+        </div>
         <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
       </div>
-      <div className="p-4" style={{ height }}>
+      <div className="p-4 overflow-hidden" style={{ height }}>
         <ChartContainer config={chartConfig} className={className}>
           <PieChart>
             {tooltip && (
               <ChartTooltip
                 content={<ChartTooltipContent />}
-                formatter={(value: any, name: any) => [valueFormatter ? valueFormatter(Number(value)) : value, name]}
+                formatter={(value: any, name: any) => [
+                  valueFormatter ? valueFormatter(Number(value)) : value,
+                  name,
+                ]}
               />
             )}
-            <Pie data={data} dataKey={valueField} nameKey={nameField} innerRadius={60} outerRadius={90} strokeWidth={2}>
+            <Pie
+              data={data}
+              dataKey={valueField}
+              nameKey={nameField}
+              innerRadius={60}
+              outerRadius={90}
+              strokeWidth={2}
+            >
               {data.map((_, i) => (
                 <Cell key={`cell-${i}`} fill={colors[i % colors.length]} />
               ))}
@@ -148,5 +198,3 @@ export const ConferenceStatisticCard: React.FC<ConferenceStatisticCardProps> = (
 };
 
 export default ConferenceStatisticCard;
-
-
