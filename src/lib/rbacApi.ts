@@ -116,16 +116,26 @@ export const systemUserApi = {
   },
 
   // Assign roles to system user
-  async assignRoles(id: string, roleIds: string[]): Promise<void> {
+  async assignRoles(
+    id: string,
+    roleIds: string[],
+    organizerId?: string
+  ): Promise<void> {
     await api.post(`/admin/system-users/${id}/roles`, {
       role_ids: roleIds,
+      organizer_id: organizerId,
     } as AssignRolesRequest);
   },
 
   // Remove roles from system user
-  async removeRoles(id: string, roleIds: string[]): Promise<void> {
+  async removeRoles(
+    id: string,
+    roleIds: string[],
+    organizerId?: string
+  ): Promise<void> {
     await api.delete(`/admin/system-users/${id}/roles`, {
       role_ids: roleIds,
+      organizer_id: organizerId,
     } as AssignRolesRequest);
   },
 
@@ -382,3 +392,48 @@ export function groupPermissionsByResource(
     return acc;
   }, {} as GroupedPermissions);
 }
+
+// ============================================
+// Organizer API (for system user assignment)
+// ============================================
+
+export interface Organizer {
+  _id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  avatar?: string;
+  is_active: boolean;
+}
+
+export interface OrganizersResponse {
+  total: number;
+  page: number;
+  per_page: number;
+  organizers: Organizer[];
+}
+
+export interface OrganizerQueryParams {
+  page?: number;
+  limit?: number;
+  q?: string;
+}
+
+export const organizerApi = {
+  /**
+   * List all organizers (for admin use)
+   */
+  async list(params?: OrganizerQueryParams): Promise<OrganizersResponse> {
+    const response = await api.request<OrganizersResponse>(
+      "/admin/organizers",
+      {
+        query: {
+          page: params?.page,
+          limit: params?.limit,
+          q: params?.q,
+        },
+      }
+    );
+    return unwrap<OrganizersResponse>(response);
+  },
+};

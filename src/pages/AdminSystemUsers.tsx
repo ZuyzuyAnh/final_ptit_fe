@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import { useApi } from "@/hooks/use-api";
-import { systemUserApi } from "@/lib/rbacApi";
+import { systemUserApi, organizerApi, type Organizer } from "@/lib/rbacApi";
 import type { SystemUser } from "@/types/rbac";
 import { SystemUserRolesDialog } from "@/components/admin/SystemUserRolesDialog";
 import { SystemUserPermissionsDialog } from "@/components/admin/SystemUserPermissionsDialog";
@@ -38,6 +38,28 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Check, ChevronsUpDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 interface SystemUserFormData {
   name: string;
@@ -53,6 +75,11 @@ const AdminSystemUsers = () => {
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const limit = 10;
+
+  // Organizers state
+  const [organizers, setOrganizers] = useState<Organizer[]>([]);
+  const [organizerSearch, setOrganizerSearch] = useState("");
+  const [organizerOpen, setOrganizerOpen] = useState(false);
 
   // Modals
   const [openCreate, setOpenCreate] = useState(false);
@@ -92,6 +119,24 @@ const AdminSystemUsers = () => {
   useEffect(() => {
     void loadUsers();
   }, [page]);
+
+  // Load organizers when opening create/edit dialog
+  useEffect(() => {
+    if (openCreate || editing) {
+      void loadOrganizers();
+    }
+  }, [openCreate, editing]);
+
+  const loadOrganizers = async () => {
+    await safeRequest(async () => {
+      const response = await organizerApi.list({
+        page: 1,
+        limit: 100, // Load more for selection
+        q: organizerSearch || undefined,
+      });
+      setOrganizers(response.organizers || []);
+    });
+  };
 
   const handleSearch = () => {
     setPage(1);
@@ -424,6 +469,92 @@ const AdminSystemUsers = () => {
                 }
                 placeholder="0123456789"
               />
+            </div>
+            <div>
+              <Label htmlFor="organizer">Tổ chức (Organizer)</Label>
+              <Popover open={organizerOpen} onOpenChange={setOrganizerOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={organizerOpen}
+                    className="w-full justify-between"
+                  >
+                    {formData.organizer_id
+                      ? organizers.find(
+                          (org) => org._id === formData.organizer_id
+                        )?.name || "Chọn tổ chức..."
+                      : "Chọn tổ chức..."}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-0">
+                  <Command>
+                    <CommandInput
+                      placeholder="Tìm kiếm tổ chức..."
+                      value={organizerSearch}
+                      onValueChange={setOrganizerSearch}
+                    />
+                    <CommandList>
+                      <CommandEmpty>Không tìm thấy tổ chức.</CommandEmpty>
+                      <CommandGroup>
+                        <CommandItem
+                          value=""
+                          onSelect={() => {
+                            setFormData({
+                              ...formData,
+                              organizer_id: undefined,
+                            });
+                            setOrganizerOpen(false);
+                          }}
+                        >
+                          <Check
+                            className={cn(
+                              "mr-2 h-4 w-4",
+                              !formData.organizer_id
+                                ? "opacity-100"
+                                : "opacity-0"
+                            )}
+                          />
+                          Không chọn tổ chức
+                        </CommandItem>
+                        {organizers.map((organizer) => (
+                          <CommandItem
+                            key={organizer._id}
+                            value={organizer.name}
+                            onSelect={() => {
+                              setFormData({
+                                ...formData,
+                                organizer_id: organizer._id,
+                              });
+                              setOrganizerOpen(false);
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                formData.organizer_id === organizer._id
+                                  ? "opacity-100"
+                                  : "opacity-0"
+                              )}
+                            />
+                            <div className="flex flex-col">
+                              <span>{organizer.name}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {organizer.email}
+                              </span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+              <p className="text-xs text-muted-foreground mt-1">
+                Chọn tổ chức nếu người dùng được gán vai trò có phạm vi tổ chức
+                (organizer scope)
+              </p>
             </div>
             {!editing && (
               <div>

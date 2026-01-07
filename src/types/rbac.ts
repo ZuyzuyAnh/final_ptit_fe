@@ -113,6 +113,7 @@ export interface UpdatePermissionRequest {
 
 export interface AssignRolesRequest {
   role_ids: string[];
+  organizer_id?: string; // Optional: null for global roles, UUID for organizer-scoped
 }
 
 export interface AssignPermissionsRequest {

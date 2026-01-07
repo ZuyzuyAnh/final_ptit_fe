@@ -36,6 +36,9 @@ export const SystemUserRolesDialog = ({
   const [userRoles, setUserRoles] = useState<Set<string>>(new Set());
   const [originalRoles, setOriginalRoles] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [userOrganizerId, setUserOrganizerId] = useState<string | undefined>(
+    undefined
+  );
 
   useEffect(() => {
     if (open && userId) {
@@ -47,6 +50,10 @@ export const SystemUserRolesDialog = ({
     setLoading(true);
     await safeRequest(async () => {
       if (userId) {
+        // Load user details to get organizer_id
+        const user = await systemUserApi.getById(userId);
+        setUserOrganizerId(user.organizer_id);
+
         // Load all roles with has_role field for this user
         const rolesResponse = await roleApi.list({
           limit: 1000,
@@ -89,10 +96,10 @@ export const SystemUserRolesDialog = ({
       ) as string[];
 
       if (toAdd.length > 0) {
-        await systemUserApi.assignRoles(userId, toAdd);
+        await systemUserApi.assignRoles(userId, toAdd, userOrganizerId);
       }
       if (toRemove.length > 0) {
-        await systemUserApi.removeRoles(userId, toRemove);
+        await systemUserApi.removeRoles(userId, toRemove, userOrganizerId);
       }
 
       toast.success("Cập nhật vai trò thành công");
