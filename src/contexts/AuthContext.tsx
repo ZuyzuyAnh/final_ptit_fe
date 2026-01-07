@@ -277,17 +277,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         hasAllPermissions,
         isGlobalAdmin,
         isOrganizerScoped,
-        getUserScope
-        token,
-        permissions,
-        isAuthenticated: !!user && !!token,
-        isLoading,
-        login,
-        logout,
-        checkAuth,
-        hasPermission,
-        hasAnyPermission,
-        hasAllPermissions,
+        getUserScope,
       }}
     >
       {children}
