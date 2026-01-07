@@ -13,7 +13,14 @@ export function ProtectedRoute({
   requiredUserType,
   redirectTo = "/login",
 }: ProtectedRouteProps) {
-  const { isAuthenticated, isLoading, userType } = useAuth();
+  const {
+    isAuthenticated,
+    isLoading,
+    userType,
+    user,
+    isGlobalAdmin,
+    isOrganizerScoped,
+  } = useAuth();
 
   if (isLoading) {
     return (
@@ -31,25 +38,35 @@ export function ProtectedRoute({
   }
 
   if (requiredUserType) {
-    // Allow both 'admin' and 'system_user' to access admin routes
+    // Admin routes: accessible by global admins (scope: GLOBAL)
     const isAdminRoute =
       requiredUserType === "admin" || requiredUserType === "system_user";
     const isAdminUser = userType === "admin" || userType === "system_user";
 
-    if (isAdminRoute && !isAdminUser) {
-      // Non-admin trying to access admin route
-      if (userType === "organizer") {
-        return <Navigate to="/dashboard" replace />;
+    if (isAdminRoute) {
+      // For admin routes, check if user has global scope
+      if (!isGlobalAdmin()) {
+        // Organizer-scoped admins should go to organizer dashboard
+        if (userType === "organizer" || isOrganizerScoped()) {
+          return <Navigate to="/dashboard" replace />;
+        }
+        return <Navigate to={redirectTo} replace />;
       }
-      return <Navigate to={redirectTo} replace />;
     }
 
-    if (requiredUserType === "organizer" && userType !== "organizer") {
-      // Non-organizer trying to access organizer route
-      if (isAdminUser) {
-        return <Navigate to="/admin" replace />;
+    // Organizer routes: accessible by organizers AND organizer-scoped admins
+    if (requiredUserType === "organizer") {
+      // Allow regular organizers or organizer-scoped system users
+      const hasOrganizerAccess =
+        userType === "organizer" || isOrganizerScoped() || isGlobalAdmin(); // Global admins can access everything
+
+      if (!hasOrganizerAccess) {
+        // Non-organizer trying to access organizer route
+        if (isAdminUser) {
+          return <Navigate to="/admin" replace />;
+        }
+        return <Navigate to={redirectTo} replace />;
       }
-      return <Navigate to={redirectTo} replace />;
     }
   }
 

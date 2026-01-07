@@ -16,7 +16,15 @@ interface LoginResponse {
     access_token: string;
     expire_in: number;
     auth_type: string;
-    user_type?: string; // 'system_user' for admin/staff, 'organizer' for organizers
+    user?: {
+      _id: string;
+      name: string;
+      email: string;
+      phone?: string;
+      organizer_id?: string | null;
+      scope?: "GLOBAL" | "ORGANIZER";
+      is_global_admin?: boolean;
+    };
   };
 }
 
@@ -25,6 +33,9 @@ interface UserProfile {
   name: string;
   email: string;
   phone: string;
+  organizer_id?: string | null;
+  scope?: "GLOBAL" | "ORGANIZER";
+  is_global_admin?: boolean;
 }
 
 const Login = () => {
@@ -127,30 +138,30 @@ const Login = () => {
       return;
     }
 
-    // Try admin login first, but don't show an error toast yet (we'll fall back to organizer).
-    let adminLoginResult: LoginResponse | undefined;
+    // New unified login: Try system user login first (handles both global and organizer-scoped admins)
+    let systemUserLoginResult: LoginResponse | undefined;
     let lastErrorMessage: string | undefined;
+
     await withLoading(async () => {
       try {
-        adminLoginResult = await api.post<LoginResponse>("/admin/auth/login", {
-          email: formData.email,
-          password: formData.password,
-        });
+        systemUserLoginResult = await api.post<LoginResponse>(
+          "/admin/system-users/login",
+          {
+            email: formData.email,
+            password: formData.password,
+          }
+        );
       } catch (err: any) {
         lastErrorMessage = err?.message;
       }
     });
 
-    if (adminLoginResult && adminLoginResult.data?.access_token) {
-      const token = adminLoginResult.data.access_token;
-      const userType = adminLoginResult.data.user_type || "system_user"; // Default to system_user for admin endpoint
+    if (systemUserLoginResult && systemUserLoginResult.data?.access_token) {
+      const token = systemUserLoginResult.data.access_token;
+      const userData = systemUserLoginResult.data.user;
 
       if (token && typeof token === "string" && token.trim() !== "") {
         localStorage.setItem("auth_token", token);
-        // Map user_type from backend to frontend type
-        const frontendUserType =
-          userType === "system_user" ? "admin" : "organizer";
-        localStorage.setItem("user_type", frontendUserType);
 
         // Fetch user profile
         const profileResponse = await safeRequest<{
@@ -164,20 +175,34 @@ const Login = () => {
             success: boolean;
             message: string;
             data: UserProfile;
-          }>("/admin/auth/me");
+          }>("/admin/system-users/me");
         });
 
         if (profileResponse) {
           const profile: UserProfile =
             (profileResponse as any)?.data || profileResponse;
-          login(token, profile, frontendUserType as "admin" | "organizer");
 
-          // Redirect based on user type
-          if (frontendUserType === "admin") {
-            navigate("/admin");
+          // Determine user type and redirect based on scope
+          const scope = profile.scope || userData?.scope;
+          let userType: "admin" | "organizer" | "system_user" = "system_user";
+          let redirectPath = "/admin";
+
+          if (scope === "GLOBAL") {
+            userType = "admin";
+            redirectPath = "/admin";
+            localStorage.setItem("user_type", "admin");
+          } else if (scope === "ORGANIZER") {
+            userType = "organizer";
+            redirectPath = "/dashboard";
+            localStorage.setItem("user_type", "organizer");
           } else {
-            navigate("/dashboard");
+            // Fallback for legacy system without scope
+            userType = "admin";
+            localStorage.setItem("user_type", "admin");
           }
+
+          login(token, profile, userType);
+          navigate(redirectPath);
           return;
         }
       } else {
@@ -185,14 +210,17 @@ const Login = () => {
       }
     }
 
-    // If admin login failed, try organizer login (fallback)
+    // If system user login failed, try organizer login (fallback)
     let organizerLoginResult: LoginResponse | undefined;
     await withLoading(async () => {
       try {
-        organizerLoginResult = await api.post<LoginResponse>("/organizer/auth/login", {
-          email: formData.email,
-          password: formData.password,
-        });
+        organizerLoginResult = await api.post<LoginResponse>(
+          "/organizer/auth/login",
+          {
+            email: formData.email,
+            password: formData.password,
+          }
+        );
       } catch (err: any) {
         lastErrorMessage = err?.message ?? lastErrorMessage;
       }
@@ -223,6 +251,7 @@ const Login = () => {
             (organizerProfileResponse as any)?.data || organizerProfileResponse;
           login(token, organizerProfile, "organizer");
           navigate("/dashboard");
+          return;
         }
       }
     }

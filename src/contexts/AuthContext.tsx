@@ -15,7 +15,10 @@ export interface UserProfile {
   name: string;
   email: string;
   phone: string;
-  avatar?: string; 
+  avatar?: string;
+  organizer_id?: string | null;
+  scope?: "GLOBAL" | "ORGANIZER";
+  is_global_admin?: boolean;
   roles?: Array<{
     _id: string;
     name: string;
@@ -41,6 +44,9 @@ interface AuthContextType {
   hasPermission: (permissionCode: string) => boolean;
   hasAnyPermission: (permissionCodes: string[]) => boolean;
   hasAllPermissions: (permissionCodes: string[]) => boolean;
+  isGlobalAdmin: () => boolean;
+  isOrganizerScoped: () => boolean;
+  getUserScope: () => "GLOBAL" | "ORGANIZER" | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -76,13 +82,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           success: boolean;
           message: string;
           data: UserProfile;
-        }>("/admin/auth/me");
+        }>("/admin/system-users/me");
         const profile = response?.data || response;
         if (profile) {
           setUser(profile);
           setUserType(storedUserType);
           // Fetch permissions for admin/system user
-          await fetchPermissions(profile._id );
+          await fetchPermissions(profile._id);
         } else {
           throw new Error("Failed to get admin profile");
         }
@@ -108,13 +114,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             success: boolean;
             message: string;
             data: UserProfile;
-          }>("/admin/auth/me");
+          }>("/admin/system-users/me");
           const profile = response?.data || response;
           if (profile) {
             setUser(profile);
             await fetchPermissions(profile._id);
-            setUserType("admin");
-            localStorage.setItem("user_type", "admin");
+            // Determine user type based on scope
+            const scope = profile.scope;
+            if (scope === "GLOBAL") {
+              setUserType("admin");
+              localStorage.setItem("user_type", "admin");
+            } else if (scope === "ORGANIZER") {
+              setUserType("organizer");
+              localStorage.setItem("user_type", "organizer");
+            } else {
+              setUserType("admin");
+              localStorage.setItem("user_type", "admin");
+            }
           }
         } catch {
           try {
@@ -232,11 +248,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  const isGlobalAdmin = (): boolean => {
+    return user?.is_global_admin === true || user?.scope === "GLOBAL";
+  };
+
+  const isOrganizerScoped = (): boolean => {
+    return user?.scope === "ORGANIZER" && !!user?.organizer_id;
+  };
+
+  const getUserScope = (): "GLOBAL" | "ORGANIZER" | null => {
+    return user?.scope || null;
+  };
+
   return (
     <AuthContext.Provider
       value={{
         user,
         userType,
+        token,
+        permissions,
+        isAuthenticated: !!user && !!token,
+        isLoading,
+        login,
+        logout,
+        checkAuth,
+        hasPermission,
+        hasAnyPermission,
+        hasAllPermissions,
+        isGlobalAdmin,
+        isOrganizerScoped,
+        getUserScope
         token,
         permissions,
         isAuthenticated: !!user && !!token,
